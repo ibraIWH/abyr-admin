@@ -23,7 +23,7 @@ export default function CategoriesPage() {
   const [confirm, setConfirm] = useState(null);
 
   const load = () =>
-    Promise.all([api.get('/collections?all=true'), api.get('/products')])
+    Promise.all([api.get('/categories?all=true'), api.get('/products')])
       .then(([cats, prods]) => {
         setItems(cats.data);
         setProducts(prods.data || []);
@@ -38,7 +38,7 @@ export default function CategoriesPage() {
 
   const onDelete = async () => {
     try {
-      await api.delete(`/collections/${confirm._id}`);
+      await api.delete(`/categories/${confirm._id}`);
       toast.success('Category deleted');
       setConfirm(null);
       load();
@@ -151,8 +151,8 @@ function CategoryForm({ item, onClose, onSaved }) {
       isActive: form.isActive,
     };
     try {
-      if (isEdit) await api.put(`/collections/${item._id}`, payload);
-      else await api.post('/collections', payload);
+      if (isEdit) await api.put(`/categories/${item._id}`, payload);
+      else await api.post('/categories', payload);
       toast.success(isEdit ? 'Category updated' : 'Category added');
       onSaved();
     } catch (e) { toast.error(apiError(e)); setSaving(false); }

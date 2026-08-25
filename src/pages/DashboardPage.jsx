@@ -13,14 +13,14 @@ export default function DashboardPage() {
   useEffect(() => {
     Promise.all([
       api.get('/products'),
-      api.get('/collections?all=true'),
+      api.get('/categories?all=true'),
       api.get('/offers?all=true'),
       api.get('/orders/admin/all'),
     ])
       .then(([p, c, o, ord]) => {
         setData({
           products: p.data.length,
-          collections: c.data.length,
+          categories: c.data.length,
           offers: o.data.length,
           orders: ord.data,
         });
@@ -43,7 +43,7 @@ export default function DashboardPage() {
 
   const stats = [
     { label: 'Products', value: data.products, to: '/products' },
-    { label: 'Categories', value: data.collections, to: '/categories' },
+    { label: 'Categories', value: data.categories, to: '/categories' },
     { label: 'Offers', value: data.offers, to: '/offers' },
     { label: 'Orders', value: data.orders.length, foot: open ? `${open} awaiting confirmation` : 'All caught up', to: '/orders' },
   ];
