@@ -67,20 +67,45 @@ export default function CategoriesPage() {
           />
         </div>
       ) : (
-        <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
+        <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}>
           {items.map((c) => {
             const count = countFor(c.name);
             return (
               <div key={c._id} className="card" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ aspectRatio: '4 / 3', background: 'var(--cream)', position: 'relative', display: 'grid', placeItems: 'center' }}>
+                {/* Preview matches the storefront tile: portrait photo with the
+                    name set into it over a scrim, so crops are judged correctly. */}
+                <div style={{ aspectRatio: '3 / 4', background: 'var(--cream)', position: 'relative', overflow: 'hidden' }}>
                   {c.imageUrl ? (
-                    <img src={c.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img
+                      src={c.imageUrl}
+                      alt=""
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top center', display: 'block' }}
+                    />
                   ) : (
-                    <span style={{ color: '#c9c0b4', display: 'grid', justifyItems: 'center', gap: 6 }}>
+                    <span style={{ position: 'absolute', inset: 0, color: '#c9c0b4', display: 'grid', justifyItems: 'center', alignContent: 'center', gap: 6 }}>
                       <IconImage size={26} />
                       <span style={{ fontSize: 11 }}>No image</span>
                     </span>
                   )}
+
+                  {c.imageUrl && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        background:
+                          'linear-gradient(to top, rgba(16,10,11,0.88) 0%, rgba(16,10,11,0.50) 20%, rgba(16,10,11,0.15) 40%, rgba(16,10,11,0) 62%)',
+                      }}
+                    />
+                  )}
+
+                  {c.imageUrl && (
+                    <div style={{ position: 'absolute', left: 0, right: 0, bottom: 14, textAlign: 'center', padding: '0 10px' }}>
+                      <div style={{ fontFamily: 'var(--display)', fontSize: 17, color: 'var(--cream)', lineHeight: 1.2 }}>{c.name}</div>
+                      <div style={{ width: 22, height: 1, background: 'var(--gold)', margin: '7px auto 0', opacity: 0.85 }} />
+                    </div>
+                  )}
+
                   {!c.isActive && (
                     <span style={{ position: 'absolute', top: 10, left: 10 }}>
                       <Badge fg="#5B5048" bg="#EFEAE2">Hidden</Badge>
@@ -188,7 +213,7 @@ function CategoryForm({ item, onClose, onSaved }) {
           </div>
         )}
 
-        <ImageField label="Tile image" aspect="4 / 3" value={form.imageUrl} onChange={(v) => set('imageUrl', v)} hint="Shown in the “Shop by Category” section on your storefront." />
+        <ImageField label="Tile image" aspect="3 / 4" value={form.imageUrl} onChange={(v) => set('imageUrl', v)} hint="Shown in the “Shop by Category” section on your storefront." />
         <Field as="textarea" label="Description (optional)" value={form.description} onChange={(e) => set('description', e.target.value)} />
         <div className="field-row">
           <Field label="Sort order" type="number" value={form.order} onChange={(e) => set('order', e.target.value)} hint="Lower shows first." />

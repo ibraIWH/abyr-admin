@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import api, { apiError } from '../api';
-import { useToast } from '../context/ToastContext';
-import { PageHeader } from '../components/Layout';
-import { Modal, ConfirmDialog } from '../components/Modal';
-import { Button, Field, Toggle, Badge, Loading, EmptyState } from '../components/ui';
+import { IconEdit, IconExternal, IconOffers, IconPlus, IconTrash } from '../components/Icons';
 import ImageField from '../components/ImageField';
-import { IconPlus, IconEdit, IconTrash, IconOffers, IconExternal } from '../components/Icons';
+import { PageHeader } from '../components/Layout';
+import { ConfirmDialog, Modal } from '../components/Modal';
+import { Badge, Button, EmptyState, Field, Loading, Toggle } from '../components/ui';
+import { useToast } from '../context/ToastContext';
 
 const blank = () => ({ title: '', badgeText: '', subtitle: '', imageUrl: '', link: '', order: 0, isActive: true });
 
@@ -54,28 +54,54 @@ export default function OffersPage() {
           />
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
           {items.map((o) => (
             <div key={o._id} className="card" style={{ overflow: 'hidden' }}>
-              <div style={{ position: 'relative', aspectRatio: '16 / 5', background: o.imageUrl ? 'var(--cream)' : 'var(--red)', display: 'grid', placeItems: 'center' }}>
-                {o.imageUrl && <img src={o.imageUrl} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
-                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, rgba(20,5,8,.55), rgba(20,5,8,.05))' }} />
-                <div style={{ position: 'absolute', left: 22, top: '50%', transform: 'translateY(-50%)', color: '#fff' }}>
-                  {o.badgeText && (
-                    <span style={{ display: 'inline-block', marginBottom: 8 }}>
+              {/* Preview mirrors the storefront: photo on the left fading into
+                  a dark panel on the right. Keeps the admin honest about what
+                  customers actually see. */}
+              <div style={{ display: 'flex', minHeight: 200, background: 'var(--ink, #1A1A1A)' }}>
+                <div style={{ flex: '0 0 170px', position: 'relative', background: 'var(--cream)', overflow: 'hidden' }}>
+                  {o.imageUrl ? (
+                    <img src={o.imageUrl} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top center' }} />
+                  ) : (
+                    <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#c9c0b4', fontSize: 11 }}>
+                      No image
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background:
+                        'linear-gradient(to right, rgba(26,26,26,0) 0%, rgba(26,26,26,0.10) 40%, rgba(26,26,26,0.40) 64%, rgba(26,26,26,0.78) 84%, rgba(26,26,26,1) 100%)',
+                    }}
+                  />
+                </div>
+
+                <div style={{ flex: 1, padding: '18px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', color: '#fff', minWidth: 0 }}>
+                  {o.badgeText ? (
+                    <span style={{ alignSelf: 'flex-start' }}>
                       <Badge fg="#1A1A1A" bg="var(--gold)">{o.badgeText}</Badge>
                     </span>
-                  )}
-                  <div style={{ fontFamily: 'var(--display)', fontStyle: 'italic', fontSize: 26, lineHeight: 1.1 }}>{o.title}</div>
-                  {o.subtitle && <div style={{ fontSize: 13, opacity: .85, marginTop: 4, maxWidth: 420 }}>{o.subtitle}</div>}
+                  ) : <span />}
+
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontFamily: 'var(--display)', fontStyle: 'italic', fontSize: 24, lineHeight: 1.15 }}>{o.title}</div>
+                    {o.subtitle && <div style={{ fontSize: 12, opacity: .75, marginTop: 6, lineHeight: 1.5 }}>{o.subtitle}</div>}
+                  </div>
+
+                  <div style={{ fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: 'var(--gold)', borderTop: '1px solid rgba(196,168,130,0.28)', paddingTop: 10 }}>
+                    Shop now →
+                  </div>
                 </div>
-                {!o.isActive && (
-                  <span style={{ position: 'absolute', top: 12, right: 12 }}><Badge fg="#5B5048" bg="#EFEAE2">Hidden</Badge></span>
-                )}
+
               </div>
+
               <div className="card__pad" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                 <div className="muted" style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                   {o.link ? (<><IconExternal size={15} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.link}</span></>) : (<span>No link · order {o.order}</span>)}
+                  {!o.isActive && <Badge fg="#5B5048" bg="#EFEAE2">Hidden</Badge>}
                 </div>
                 <div className="row-actions">
                   <button className="icon-btn" title="Edit" onClick={() => setEditing(o)}><IconEdit size={17} /></button>
@@ -153,7 +179,7 @@ function OfferForm({ item, onClose, onSaved }) {
           <Field label="Sort order" type="number" value={form.order} onChange={(e) => set('order', e.target.value)} hint="Lower shows first." />
         </div>
         <Field label="Subtitle (optional)" placeholder="On selected abayas" value={form.subtitle} onChange={(e) => set('subtitle', e.target.value)} />
-        <ImageField label="Banner image" aspect="16 / 6" value={form.imageUrl} onChange={(v) => set('imageUrl', v)} />
+        <ImageField label="Offer photo" aspect="3 / 4" value={form.imageUrl} onChange={(v) => set('imageUrl', v)} />
         <Field label="Link (optional)" placeholder="/category/sale" value={form.link} onChange={(e) => set('link', e.target.value)} hint="Where the banner takes shoppers when tapped." />
         <div className="field">
           <span className="field__label">Visibility</span>
