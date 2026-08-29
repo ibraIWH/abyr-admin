@@ -20,7 +20,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'   # Explicitly use Node.js 22 to avoid deprecation warning
 
       - name: Install Repomix (to bundle code)
         run: npm install -g repomix
