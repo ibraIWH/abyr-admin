@@ -1,0 +1,95 @@
+name: DeepSeek Code Review
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    types: [ opened, synchronize, reopened ]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Repomix (to bundle code)
+        run: npm install -g repomix
+
+      - name: Bundle repository into single text file
+        run: |
+          repomix --output repomix-output.txt
+          echo "✅ Repository bundled successfully"
+
+      - name: Send code to DeepSeek API
+        id: deepseek
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          # Read the bundled code
+          CODE_CONTENT=$(cat repomix-output.txt | jq -R -s '.')
+
+          # Send to DeepSeek API
+          RESPONSE=$(curl -s -X POST https://api.deepseek.com/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
+            -d '{
+              "model": "deepseek-chat",
+              "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a senior code reviewer. Analyze the following repository code and provide feedback on: 1) Code quality, 2) Missing features, 3) Potential bugs, 4) Security issues, 5) Performance improvements. Be concise and actionable."
+                },
+                {
+                  "role": "user",
+                  "content": '"$CODE_CONTENT"'
+                }
+              ],
+              "temperature": 0.3,
+              "max_tokens": 8000
+            }')
+
+          # Save response
+          echo "$RESPONSE" > deepseek-response.json
+          echo "✅ DeepSeek analysis complete"
+
+      - name: Upload analysis results
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepseek-analysis
+          path: deepseek-response.json
+
+      - name: Post comment on PR (if PR exists)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const response = JSON.parse(fs.readFileSync('deepseek-response.json', 'utf8'));
+            const analysis = response.choices?.[0]?.message?.content || 'Analysis completed. Check artifacts for details.';
+
+            const comment = `
+            ## 🤖 DeepSeek Code Review
+
+            ${analysis}
+
+            ---
+            *Generated automatically by DeepSeek AI*
+            `;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
