@@ -1,0 +1,2365 @@
+FILE: src/context/AuthContext.jsx
+import { createContext, useContext, useEffect, useState } from 'react';
+import api, { TOKEN_KEY, apiError } from '../api';
+
+const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // Restore session on load: verify the stored token and confirm admin role.
+  useEffect(() => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    api
+      .get('/auth/me')
+      .then((res) => {
+        if (res.data?.role === 'admin') setUser(res.data);
+        else localStorage.removeItem(TOKEN_KEY); // logged-in but not an admin
+      })
+      .catch(() => localStorage.removeItem(TOKEN_KEY))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Returns the user on success, throws a friendly Error otherwise.
+  const login = async (email, password) => {
+    let res;
+    try {
+      res = await api.post('/auth/login', { email, password });
+    } catch (err) {
+      throw new Error(apiError(err));
+    }
+    const { token, user: userData } = res.data;
+
+    if (userData?.role !== 'admin') {
+      // Never store a customer token in the admin app.
+      throw new Error('This account is not an admin. Ask the owner for access.');
+    }
+
+    localStorage.setItem(TOKEN_KEY, token);
+    setUser(userData);
+    return userData;
+  };
+
+  const logout = () => {
+    localStorage.removeItem(TOKEN_KEY);
+    setUser(null);
+    window.location.href = '/login';
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  return useContext(AuthContext);
+}
+FILE: src/context/ToastContext.jsx
+import { createContext, useCallback, useContext, useState } from 'react';
+
+const ToastContext = createContext(null);
+
+export const useToast = () => {
+  const ctx = useContext(ToastContext);
+  if (!ctx) throw new Error('useToast must be used inside ToastProvider');
+  return ctx;
+};
+
+export function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([]);
+
+  const remove = useCallback((id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const push = useCallback(
+    (message, type = 'info') => {
+      const id = Date.now() + Math.random();
+      setToasts((prev) => [...prev, { id, message, type }]);
+      setTimeout(() => remove(id), 3200);
+    },
+    [remove]
+  );
+
+  const toast = {
+    success: (m) => push(m, 'success'),
+    error: (m) => push(m, 'error'),
+    info: (m) => push(m, 'info'),
+  };
+
+  return (
+    <ToastContext.Provider value={toast}>
+      {children}
+      <div className="toast-stack" role="status" aria-live="polite">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast toast--${t.type}`} onClick={() => remove(t.id)}>
+            {t.message}
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+}
+FILE: src/theme.js
+// Palette ported straight from the storefront's designTokens.js so the admin
+// shares one source of truth with the web + iOS apps.
+export const C = {
+  red: '#5C0A14',     // brandRed
+  gold: '#C4A882',
+  tan: '#8B7355',
+  cream: '#F5F0E8',
+  sand: '#FAFAF8',
+  ink: '#1A1A1A',
+  border: '#E8E8E4',
+  white: '#FFFFFF',
+  green: '#1B5E20',
+  amber: '#E65100',
+  redAlert: '#C62828',
+};
+
+// Product tag → label + colors (matches Product.tag enum: none/bestSeller/sellingFast)
+export const TAG_META = {
+  none:        { label: '—',            fg: '#9A8F84', bg: 'transparent' },
+  bestSeller:  { label: 'Best Seller',  fg: '#6B5A2E', bg: '#F3ECDC' },
+  sellingFast: { label: 'Selling Fast', fg: '#8A3A00', bg: '#FBE7D8' },
+};
+
+export const TAG_OPTIONS = [
+  { value: 'none', label: 'No tag' },
+  { value: 'bestSeller', label: 'Best Seller' },
+  { value: 'sellingFast', label: 'Selling Fast' },
+];
+
+// Order status → label + colors (matches Order.status enum)
+export const STATUS_META = {
+  placed:    { label: 'Placed',    fg: '#5B5048', bg: '#EFEAE2' },
+  confirmed: { label: 'Confirmed', fg: '#5C0A14', bg: '#F4E3E5' },
+  shipped:   { label: 'Shipped',   fg: '#8A3A00', bg: '#FBE7D8' },
+  delivered: { label: 'Delivered', fg: '#1B5E20', bg: '#E3F0E4' },
+  cancelled: { label: 'Cancelled', fg: '#C62828', bg: '#FBE3E3' },
+};
+
+export const STATUS_OPTIONS = ['placed', 'confirmed', 'shipped', 'delivered', 'cancelled'];
+
+// Default size set used by the storefront Product model
+export const DEFAULT_SIZES = ['XS', 'S', 'M', 'L', 'XL'];
+
+export const SAR = (n) =>
+  n == null || n === '' ? '—' : `SAR ${Number(n).toLocaleString('en-US')}`;
+FILE: src/index.css
+:root {
+  --red: #5C0A14;
+  --red-dark: #470810;
+  --gold: #C4A882;
+  --gold-deep: #B2965F;
+  --tan: #8B7355;
+  --cream: #F5F0E8;
+  --sand: #FAFAF8;
+  --ink: #1A1A1A;
+  --muted: #7C7268;
+  --border: #E8E8E4;
+  --white: #FFFFFF;
+  --green: #1B5E20;
+  --amber: #E65100;
+  --red-alert: #C62828;
+
+  --sidebar-w: 248px;
+  --radius: 12px;
+  --radius-sm: 9px;
+  --shadow-sm: 0 1px 2px rgba(26,26,26,.04), 0 1px 3px rgba(26,26,26,.05);
+  --shadow-md: 0 10px 34px rgba(26,26,26,.12);
+
+  --display: 'Cormorant Garamond', Georgia, serif;
+  --sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root { height: 100%; }
+
+body {
+  font-family: var(--sans);
+  color: var(--ink);
+  background: var(--sand);
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; }
+input, textarea, select { font-family: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ============================ App shell ============================ */
+.app { min-height: 100vh; }
+
+.sidebar {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: var(--sidebar-w);
+  background: var(--red);
+  color: var(--cream);
+  display: flex;
+  flex-direction: column;
+  z-index: 40;
+}
+
+.sidebar__top {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 26px 22px 20px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+.brand { display: flex; flex-direction: column; gap: 3px; }
+.brand__mark {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--cream);
+}
+.brand__sub {
+  font-size: 9.5px; letter-spacing: 2.5px; font-weight: 500;
+  color: var(--gold);
+}
+.sidebar__close { display: none; }
+
+.nav { display: flex; flex-direction: column; gap: 2px; padding: 16px 12px; flex: 1; }
+.nav__item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  color: rgba(245,240,232,.72);
+  font-weight: 500;
+  font-size: 13.5px;
+  border-left: 3px solid transparent;
+  transition: background .15s ease, color .15s ease;
+}
+.nav__item:hover { background: rgba(255,255,255,.05); color: var(--cream); }
+.nav__item--active {
+  background: rgba(255,255,255,.07);
+  color: #fff;
+  border-left-color: var(--gold);
+}
+.nav__item--active svg { color: var(--gold); }
+
+.sidebar__foot { padding: 14px 16px 18px; border-top: 1px solid rgba(255,255,255,.10); }
+.who { display: flex; align-items: center; gap: 11px; margin-bottom: 12px; }
+.who__avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--gold); color: var(--red);
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 15px;
+  flex-shrink: 0;
+}
+.who__meta { display: flex; flex-direction: column; min-width: 0; }
+.who__name { font-size: 13px; font-weight: 500; color: var(--cream); }
+.who__email { font-size: 11px; color: rgba(245,240,232,.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.logout {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 9px 12px;
+  background: transparent; border: 1px solid rgba(255,255,255,.16);
+  color: rgba(245,240,232,.85); border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 500;
+  transition: background .15s ease, border-color .15s ease;
+}
+.logout:hover { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.3); }
+
+.main { margin-left: var(--sidebar-w); min-height: 100vh; }
+.content { max-width: 1180px; padding: 40px 44px 80px; margin: 0 auto; }
+
+/* Mobile top bar + scrim */
+.mobilebar {
+  display: none;
+  position: sticky; top: 0; z-index: 30;
+  align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--red); color: var(--cream);
+}
+.mobilebar__brand { font-family: var(--display); font-style: italic; font-size: 22px; }
+.scrim { display: none; }
+
+/* ============================ Page header ============================ */
+.pagehead {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 18px; margin-bottom: 28px; flex-wrap: wrap;
+}
+.pagehead__title {
+  font-family: var(--display); font-style: italic; font-weight: 400;
+  font-size: 36px; line-height: 1.05; color: var(--ink);
+  letter-spacing: .2px;
+}
+.pagehead__subtitle { font-size: 14px; color: var(--muted); margin-top: 6px; }
+.pagehead__actions { display: flex; gap: 10px; }
+
+/* ============================ Buttons ============================ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  font-weight: 500; font-size: 13.5px; line-height: 1;
+  padding: 11px 16px; white-space: nowrap;
+  transition: background .15s ease, border-color .15s ease, opacity .15s ease, transform .05s ease;
+}
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn--sm { padding: 8px 12px; font-size: 12.5px; }
+.btn--primary { background: var(--gold); color: var(--ink); }
+.btn--primary:hover:not(:disabled) { background: var(--gold-deep); }
+.btn--ghost { background: var(--white); color: var(--ink); border-color: var(--border); }
+.btn--ghost:hover:not(:disabled) { background: var(--cream); }
+.btn--subtle { background: var(--cream); color: var(--tan); }
+.btn--subtle:hover:not(:disabled) { background: #efe7da; color: var(--ink); }
+.btn--danger { background: var(--red-alert); color: #fff; }
+.btn--danger:hover:not(:disabled) { background: #a81f1f; }
+.btn__spinner {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid rgba(0,0,0,.25); border-top-color: rgba(0,0,0,.7);
+  animation: spin .7s linear infinite;
+}
+
+.icon-btn {
+  display: inline-grid; place-items: center;
+  width: 36px; height: 36px; border-radius: 9px;
+  background: transparent; border: none; color: var(--muted);
+  transition: background .15s ease, color .15s ease;
+}
+.icon-btn:hover { background: var(--cream); color: var(--ink); }
+.icon-btn--light { color: var(--cream); }
+.icon-btn--light:hover { background: rgba(255,255,255,.12); color: #fff; }
+.icon-btn--danger:hover { background: #fbe3e3; color: var(--red-alert); }
+
+/* ============================ Forms ============================ */
+.field { display: flex; flex-direction: column; gap: 7px; }
+.field__label {
+  font-size: 11px; font-weight: 500; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--tan);
+}
+.field__hint { font-size: 12px; color: var(--muted); }
+.field__error { font-size: 12px; color: var(--red-alert); }
+
+.input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+  color: var(--ink);
+  font-size: 14px;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.input::placeholder { color: #b3aba1; }
+.input:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(196,168,130,.22);
+}
+.input--error { border-color: var(--red-alert); }
+textarea.input { resize: vertical; min-height: 84px; line-height: 1.55; }
+
+.select-wrap { position: relative; }
+.select-wrap select { appearance: none; padding-right: 36px; cursor: pointer; }
+.select-caret {
+  position: absolute; right: 13px; top: 50%; width: 8px; height: 8px;
+  border-right: 1.6px solid var(--muted); border-bottom: 1.6px solid var(--muted);
+  transform: translateY(-65%) rotate(45deg); pointer-events: none;
+}
+
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-stack { display: flex; flex-direction: column; gap: 18px; }
+
+/* Toggle */
+.toggle { display: inline-flex; align-items: center; gap: 10px; background: none; border: none; padding: 0; }
+.toggle__track {
+  width: 40px; height: 23px; border-radius: 999px; background: #d9d2c7;
+  position: relative; transition: background .18s ease; display: inline-block;
+}
+.toggle__thumb {
+  position: absolute; top: 2.5px; left: 2.5px;
+  width: 18px; height: 18px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: left .18s ease;
+}
+.toggle--on .toggle__track { background: var(--gold); }
+.toggle--on .toggle__thumb { left: 19.5px; }
+.toggle__label { font-size: 13.5px; font-weight: 500; }
+
+/* Chips */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 7px 13px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--white);
+  font-size: 13px; font-weight: 500; color: var(--muted);
+  transition: all .12s ease;
+}
+.chip--on { border-color: var(--gold); background: #f6efe2; color: var(--ink); }
+
+/* ============================ Badge ============================ */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .6px;
+  text-transform: uppercase; white-space: nowrap;
+}
+
+/* ============================ Cards / grid ============================ */
+.card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.card__pad { padding: 22px 24px; }
+.card__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 24px; border-bottom: 1px solid var(--border);
+}
+.card__title { font-family: var(--display); font-style: italic; font-size: 22px; }
+.card__hint { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+.grid-cards { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.stat { padding: 20px 22px; }
+.stat__label { font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--tan); font-weight: 500; }
+.stat__value { font-family: var(--display); font-size: 40px; line-height: 1; margin-top: 12px; color: var(--ink); }
+.stat__foot { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+
+/* ============================ Table ============================ */
+.table-wrap { width: 100%; overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; min-width: 640px; }
+.table thead th {
+  text-align: left; padding: 13px 18px;
+  font-size: 10.5px; letter-spacing: 1.1px; text-transform: uppercase;
+  color: var(--tan); font-weight: 700;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.table tbody td { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 13.5px; vertical-align: middle; }
+.table tbody tr:last-child td { border-bottom: none; }
+.table tbody tr { transition: background .12s ease; }
+.table tbody tr:hover { background: #fcfbf8; }
+.row-clickable { cursor: pointer; }
+
+.thumb {
+  width: 46px; height: 60px; border-radius: 7px; object-fit: cover;
+  background: var(--cream); border: 1px solid var(--border); flex-shrink: 0;
+}
+.thumb--placeholder { display: grid; place-items: center; color: #c9c0b4; }
+.cell-product { display: flex; align-items: center; gap: 13px; }
+.cell-product__name { font-weight: 500; color: var(--ink); }
+.cell-product__meta { font-size: 12px; color: var(--muted); margin-top: 1px; }
+
+.price { font-weight: 500; }
+.price__sale { color: var(--red); font-weight: 700; }
+.price__old { color: var(--muted); text-decoration: line-through; font-size: 12.5px; margin-left: 6px; }
+
+.row-actions { display: flex; gap: 4px; justify-content: flex-end; }
+
+.muted { color: var(--muted); }
+.nowrap { white-space: nowrap; }
+
+/* Toolbar above tables */
+.toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.search { position: relative; flex: 1; min-width: 200px; max-width: 360px; }
+.search .input { padding-left: 12px; }
+.seg { display: inline-flex; background: var(--cream); border-radius: 999px; padding: 3px; gap: 2px; }
+.seg button {
+  border: none; background: transparent; padding: 7px 14px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 500; color: var(--muted);
+}
+.seg button.is-active { background: var(--white); color: var(--ink); box-shadow: var(--shadow-sm); }
+
+/* ============================ Loading / empty ============================ */
+.spinner {
+  display: inline-block; border-radius: 50%;
+  border: 2.5px solid rgba(92,10,20,.15); border-top-color: var(--red);
+  animation: spin .7s linear infinite;
+}
+.loading { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 60px 0; color: var(--muted); font-size: 14px; }
+
+.empty { text-align: center; padding: 56px 24px; }
+.empty__icon { color: var(--gold); margin-bottom: 14px; display: flex; justify-content: center; }
+.empty__title { font-family: var(--display); font-style: italic; font-size: 24px; color: var(--ink); }
+.empty__message { font-size: 14px; color: var(--muted); margin-top: 8px; max-width: 380px; margin-inline: auto; }
+.empty__action { margin-top: 20px; display: flex; justify-content: center; }
+
+/* ============================ Modal ============================ */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(26,26,26,.46);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 48px 18px; overflow-y: auto;
+  animation: fade .15s ease;
+}
+.modal {
+  background: var(--white); border-radius: 16px; width: 100%; max-width: 560px;
+  box-shadow: var(--shadow-md); animation: pop .18s ease;
+}
+.modal--wide { max-width: 880px; }
+.modal__head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  padding: 22px 26px; border-bottom: 1px solid var(--border);
+}
+.modal__title { font-family: var(--display); font-style: italic; font-weight: 400; font-size: 26px; color: var(--ink); }
+.modal__subtitle { font-size: 13px; color: var(--muted); margin-top: 3px; }
+.modal__body { padding: 24px 26px; }
+.modal__foot { display: flex; justify-content: flex-end; gap: 10px; padding: 18px 26px; border-top: 1px solid var(--border); }
+.confirm-text { font-size: 14.5px; color: #44403b; line-height: 1.6; }
+
+.subhead {
+  font-size: 11px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--tan);
+  font-weight: 700; margin: 4px 0 2px;
+}
+.divider { height: 1px; background: var(--border); border: none; margin: 4px 0; }
+
+/* ============================ Image field ============================ */
+.imagefield__row { display: flex; gap: 14px; align-items: stretch; }
+.imagefield__preview {
+  width: 92px; border-radius: var(--radius-sm); overflow: hidden;
+  background: var(--cream); border: 1px solid var(--border);
+  display: grid; place-items: center; flex-shrink: 0;
+}
+.imagefield__preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.imagefield__placeholder { color: #c4bbae; }
+.imagefield__input { flex: 1; display: flex; flex-direction: column; gap: 7px; justify-content: center; }
+
+/* Repeatable color rows */
+.colorrow { display: grid; grid-template-columns: 1fr 116px 1fr 36px; gap: 10px; align-items: center; }
+.swatch { width: 30px; height: 30px; border-radius: 7px; border: 1px solid var(--border); flex-shrink: 0; }
+.color-input { display: flex; align-items: center; gap: 8px; }
+.color-input input[type="color"] { width: 34px; height: 34px; border: 1px solid var(--border); border-radius: 7px; background: none; padding: 2px; cursor: pointer; }
+
+/* ============================ Toast ============================ */
+.toast-stack { position: fixed; bottom: 22px; right: 22px; z-index: 90; display: flex; flex-direction: column; gap: 10px; }
+.toast {
+  background: var(--white); color: var(--ink);
+  border-left: 4px solid var(--tan);
+  border-radius: 10px; box-shadow: var(--shadow-md);
+  padding: 13px 18px; font-size: 13.5px; max-width: 340px;
+  animation: slidein .25s ease; cursor: pointer;
+}
+.toast--success { border-left-color: var(--green); }
+.toast--error { border-left-color: var(--red-alert); }
+.toast--info { border-left-color: var(--gold); }
+
+/* ============================ Login ============================ */
+.login {
+  min-height: 100vh; display: grid; place-items: center; padding: 24px;
+  background:
+    radial-gradient(1100px 540px at 12% -10%, rgba(92,10,20,.10), transparent 60%),
+    radial-gradient(900px 480px at 110% 120%, rgba(196,168,130,.18), transparent 55%),
+    var(--cream);
+}
+.login__card {
+  width: 100%; max-width: 396px; background: var(--white);
+  border: 1px solid var(--border); border-radius: 18px;
+  box-shadow: var(--shadow-md); padding: 40px 36px;
+}
+.login__brand { text-align: center; margin-bottom: 26px; }
+.login__mark { font-family: var(--display); font-style: italic; font-size: 44px; color: var(--red); line-height: 1; }
+.login__sub { font-size: 10px; letter-spacing: 3px; color: var(--tan); font-weight: 500; margin-top: 6px; }
+.login__title { font-family: var(--display); font-style: italic; font-size: 26px; text-align: center; margin-bottom: 4px; }
+.login__hint { font-size: 13px; color: var(--muted); text-align: center; margin-bottom: 24px; }
+.login__form { display: flex; flex-direction: column; gap: 16px; }
+.login__error {
+  background: #fbe7e7; color: #8d1f1f; border: 1px solid #f3cccc;
+  border-radius: 9px; padding: 10px 13px; font-size: 13px;
+}
+.login__foot { margin-top: 18px; text-align: center; font-size: 12px; color: var(--muted); }
+
+/* ============================ Animations ============================ */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.99); } to { opacity: 1; transform: none; } }
+@keyframes slidein { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+
+/* ============================ Responsive ============================ */
+@media (max-width: 900px) {
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform .22s ease;
+    box-shadow: var(--shadow-md);
+  }
+  .sidebar--open { transform: translateX(0); }
+  .sidebar__close { display: inline-grid; }
+  .main { margin-left: 0; }
+  .mobilebar { display: flex; }
+  .scrim { display: block; position: fixed; inset: 0; background: rgba(26,26,26,.4); z-index: 35; }
+  .content { padding: 24px 18px 64px; }
+  .pagehead__title { font-size: 30px; }
+  .field-row { grid-template-columns: 1fr; }
+}
+FILE: src/components/Icons.jsx
+// Minimal inline SVG icons (no dependency). All use currentColor so they
+// inherit text color. Pass `size` to scale.
+const S = ({ size = 18, children, ...rest }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    {...rest}
+  >
+    {children}
+  </svg>
+);
+
+export const IconDashboard = (p) => (
+  <S {...p}><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></S>
+);
+export const IconProducts = (p) => (
+  <S {...p}><path d="M3.5 8 12 3l8.5 5v8L12 21l-8.5-5z" /><path d="M3.5 8 12 13l8.5-5" /><path d="M12 13v8" /></S>
+);
+export const IconCollections = (p) => (
+  <S {...p}><rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" /><rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" /></S>
+);
+export const IconOffers = (p) => (
+  <S {...p}><path d="M3 11 12 3l9 8" /><path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5" /><path d="m9.5 14.5 5-5" /><circle cx="9.7" cy="10" r=".6" /><circle cx="14.3" cy="14.5" r=".6" /></S>
+);
+export const IconHome = (p) => (
+  <S {...p}><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /><path d="M9 21v-6h6v6" /></S>
+);
+export const IconOrders = (p) => (
+  <S {...p}><path d="M6 2h12l1.5 4H4.5z" /><path d="M5 6v14a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6" /><path d="M9 11a3 3 0 0 0 6 0" /></S>
+);
+export const IconLogout = (p) => (
+  <S {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /></S>
+);
+export const IconPlus = (p) => (<S {...p}><path d="M12 5v14M5 12h14" /></S>);
+export const IconEdit = (p) => (<S {...p}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></S>);
+export const IconTrash = (p) => (<S {...p}><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M6 6v14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6" /><path d="M10 11v6M14 11v6" /></S>);
+export const IconClose = (p) => (<S {...p}><path d="M18 6 6 18M6 6l12 12" /></S>);
+export const IconPercent = (p) => (<S {...p}><path d="M19 5 5 19" /><circle cx="7.5" cy="7.5" r="2.5" /><circle cx="16.5" cy="16.5" r="2.5" /></S>);
+export const IconImage = (p) => (<S {...p}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></S>);
+export const IconMenu = (p) => (<S {...p}><path d="M3 6h18M3 12h18M3 18h18" /></S>);
+export const IconEye = (p) => (<S {...p}><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z" /><circle cx="12" cy="12" r="3" /></S>);
+export const IconExternal = (p) => (<S {...p}><path d="M14 4h6v6" /><path d="M20 4 10 14" /><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" /></S>);
+export const IconCheck = (p) => (<S {...p}><path d="m20 6-11 11-5-5" /></S>);
+FILE: src/components/Layout.jsx
+import { useState } from 'react';
+import { NavLink, Outlet } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import {
+  IconClose,
+  IconCollections,
+  IconDashboard,
+  IconHome,
+  IconLogout, IconMenu,
+  IconOffers,
+  IconOrders,
+  IconProducts,
+} from './Icons';
+
+const NAV = [
+  { to: '/', label: 'Dashboard', Icon: IconDashboard, end: true },
+  { to: '/products', label: 'Products', Icon: IconProducts },
+  { to: '/categories', label: 'Categories', Icon: IconCollections },
+  { to: '/offers', label: 'Offers', Icon: IconOffers },
+  { to: '/home', label: 'Home & Banner', Icon: IconHome },
+  { to: '/orders', label: 'Orders', Icon: IconOrders },
+];
+
+export default function Layout() {
+  const { user, logout } = useAuth();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="app">
+      {/* Mobile top bar */}
+      <header className="mobilebar">
+        <button className="icon-btn icon-btn--light" onClick={() => setOpen(true)} aria-label="Open menu">
+          <IconMenu size={22} />
+        </button>
+        <span className="mobilebar__brand">abyr</span>
+        <span style={{ width: 38 }} />
+      </header>
+
+      {open && <div className="scrim" onClick={() => setOpen(false)} />}
+
+      <aside className={`sidebar ${open ? 'sidebar--open' : ''}`}>
+        <div className="sidebar__top">
+          <div className="brand">
+            <span className="brand__mark">abyr</span>
+            <span className="brand__sub">LINE · ADMIN</span>
+          </div>
+          <button className="icon-btn icon-btn--light sidebar__close" onClick={() => setOpen(false)} aria-label="Close menu">
+            <IconClose size={20} />
+          </button>
+        </div>
+
+        <nav className="nav">
+          {NAV.map(({ to, label, Icon, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              onClick={() => setOpen(false)}
+              className={({ isActive }) => `nav__item ${isActive ? 'nav__item--active' : ''}`}
+            >
+              <Icon size={18} />
+              <span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="sidebar__foot">
+          <div className="who">
+            <div className="who__avatar">{(user?.name || 'A').charAt(0).toUpperCase()}</div>
+            <div className="who__meta">
+              <span className="who__name">{user?.name || 'Admin'}</span>
+              <span className="who__email">{user?.email}</span>
+            </div>
+          </div>
+          <button className="logout" onClick={logout}>
+            <IconLogout size={17} /> Sign out
+          </button>
+        </div>
+      </aside>
+
+      <main className="main">
+        <div className="content">
+          <Outlet />
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// Page-level header used at the top of each screen.
+export function PageHeader({ title, subtitle, actions }) {
+  return (
+    <div className="pagehead">
+      <div>
+        <h1 className="pagehead__title">{title}</h1>
+        {subtitle && <p className="pagehead__subtitle">{subtitle}</p>}
+      </div>
+      {actions && <div className="pagehead__actions">{actions}</div>}
+    </div>
+  );
+}
+FILE: src/components/ImageField.jsx
+import { IconImage } from './Icons';
+
+// Phase 2: image is set by URL with a live preview.
+// Phase 3 will add a "Choose from device" button here that uploads to
+// Cloudinary and writes the returned secure URL back through onChange —
+// every screen that uses this field upgrades for free.
+export default function ImageField({ label, value, onChange, hint, aspect = '3 / 4' }) {
+  const looksLikeUrl = typeof value === 'string' && /^https?:\/\//i.test(value.trim());
+
+  return (
+    <div className="field imagefield">
+      {label && <span className="field__label">{label}</span>}
+      <div className="imagefield__row">
+        <div className="imagefield__preview" style={{ aspectRatio: aspect }}>
+          {looksLikeUrl ? (
+            <img src={value} alt="" onError={(e) => (e.currentTarget.style.opacity = 0.2)} />
+          ) : (
+            <span className="imagefield__placeholder"><IconImage size={22} /></span>
+          )}
+        </div>
+        <div className="imagefield__input">
+          <input
+            className="input"
+            placeholder="https://…"
+            value={value || ''}
+            onChange={(e) => onChange(e.target.value)}
+          />
+          <span className="field__hint">{hint || 'Paste a direct image link (https://…).'}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+FILE: src/components/ui.jsx
+import { IconCheck } from './Icons';
+
+export function Button({
+  children,
+  variant = 'primary', // primary | ghost | danger | subtle
+  size = 'md', // sm | md
+  icon = null,
+  loading = false,
+  className = '',
+  ...rest
+}) {
+  return (
+    <button
+      className={`btn btn--${variant} btn--${size} ${className}`}
+      disabled={loading || rest.disabled}
+      {...rest}
+    >
+      {loading ? <span className="btn__spinner" /> : icon}
+      {children && <span>{children}</span>}
+    </button>
+  );
+}
+
+export function Field({ label, hint, error, as, children, className = '', ...rest }) {
+  return (
+    <label className={`field ${className}`}>
+      {label && <span className="field__label">{label}</span>}
+      {children ? (
+        children
+      ) : as === 'textarea' ? (
+        <textarea className={`input ${error ? 'input--error' : ''}`} {...rest} />
+      ) : (
+        <input className={`input ${error ? 'input--error' : ''}`} {...rest} />
+      )}
+      {error ? (
+        <span className="field__error">{error}</span>
+      ) : hint ? (
+        <span className="field__hint">{hint}</span>
+      ) : null}
+    </label>
+  );
+}
+
+export function Select({ label, hint, value, onChange, options, className = '', ...rest }) {
+  return (
+    <label className={`field ${className}`}>
+      {label && <span className="field__label">{label}</span>}
+      <div className="select-wrap">
+        <select className="input" value={value} onChange={onChange} {...rest}>
+          {options.map((o) =>
+            typeof o === 'string' ? (
+              <option key={o} value={o}>
+                {o}
+              </option>
+            ) : (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            )
+          )}
+        </select>
+        <span className="select-caret" />
+      </div>
+      {hint && <span className="field__hint">{hint}</span>}
+    </label>
+  );
+}
+
+export function Toggle({ checked, onChange, label }) {
+  return (
+    <button
+      type="button"
+      className={`toggle ${checked ? 'toggle--on' : ''}`}
+      onClick={() => onChange(!checked)}
+      aria-pressed={checked}
+    >
+      <span className="toggle__track"><span className="toggle__thumb" /></span>
+      {label && <span className="toggle__label">{label}</span>}
+    </button>
+  );
+}
+
+export function Badge({ children, fg, bg, className = '' }) {
+  return (
+    <span className={`badge ${className}`} style={{ color: fg, background: bg }}>
+      {children}
+    </span>
+  );
+}
+
+export function Spinner({ size = 22 }) {
+  return <span className="spinner" style={{ width: size, height: size }} />;
+}
+
+export function Loading({ label = 'Loading…' }) {
+  return (
+    <div className="loading">
+      <Spinner />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+export function EmptyState({ icon, title, message, action }) {
+  return (
+    <div className="empty">
+      {icon && <div className="empty__icon">{icon}</div>}
+      <div className="empty__title">{title}</div>
+      {message && <div className="empty__message">{message}</div>}
+      {action && <div className="empty__action">{action}</div>}
+    </div>
+  );
+}
+
+// Multi-select chips (used for product sizes).
+export function Chips({ options, value, onToggle }) {
+  return (
+    <div className="chips">
+      {options.map((opt) => {
+        const active = value.includes(opt);
+        return (
+          <button
+            type="button"
+            key={opt}
+            className={`chip ${active ? 'chip--on' : ''}`}
+            onClick={() => onToggle(opt)}
+          >
+            {active && <IconCheck size={13} />}
+            {opt}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+FILE: src/components/Modal.jsx
+import { useEffect } from 'react';
+import { IconClose } from './Icons';
+import { Button } from './ui';
+
+export function Modal({ open, onClose, title, subtitle, children, footer, wide = false }) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => e.key === 'Escape' && onClose?.();
+    document.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div className="modal-overlay" onMouseDown={onClose}>
+      <div
+        className={`modal ${wide ? 'modal--wide' : ''}`}
+        onMouseDown={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        <header className="modal__head">
+          <div>
+            <h2 className="modal__title">{title}</h2>
+            {subtitle && <p className="modal__subtitle">{subtitle}</p>}
+          </div>
+          <button className="icon-btn" onClick={onClose} aria-label="Close">
+            <IconClose size={20} />
+          </button>
+        </header>
+        <div className="modal__body">{children}</div>
+        {footer && <footer className="modal__foot">{footer}</footer>}
+      </div>
+    </div>
+  );
+}
+
+export function ConfirmDialog({ open, onClose, onConfirm, title, message, confirmLabel = 'Delete', loading }) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="danger" onClick={onConfirm} loading={loading}>{confirmLabel}</Button>
+        </>
+      }
+    >
+      <p className="confirm-text">{message}</p>
+    </Modal>
+  );
+}
+FILE: src/components/ProtectedRoute.jsx
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { Loading } from './ui';
+
+export default function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
+        <Loading label="Checking access…" />
+      </div>
+    );
+  }
+
+  if (!user) return <Navigate to="/login" replace />;
+
+  return children;
+}
+FILE: src/main.jsx
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
+import App from './App';
+import { AuthProvider } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
+import './index.css';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <BrowserRouter>
+      <AuthProvider>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </AuthProvider>
+    </BrowserRouter>
+  </React.StrictMode>
+);
+FILE: src/App.jsx
+import { Navigate, Route, Routes } from 'react-router-dom';
+import Layout from './components/Layout';
+import ProtectedRoute from './components/ProtectedRoute';
+
+import CategoriesPage from './pages/CategoriesPage';
+import DashboardPage from './pages/DashboardPage';
+import HomeContentPage from './pages/HomeContentPage';
+import LoginPage from './pages/LoginPage';
+import OffersPage from './pages/OffersPage';
+import OrdersPage from './pages/OrdersPage';
+import ProductsPage from './pages/ProductsPage';
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+
+      {/* Everything below requires an admin session */}
+      <Route
+        element={
+          <ProtectedRoute>
+            <Layout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<DashboardPage />} />
+        <Route path="products" element={<ProductsPage />} />
+        <Route path="categories" element={<CategoriesPage />} />
+        <Route path="offers" element={<OffersPage />} />
+        <Route path="home" element={<HomeContentPage />} />
+        <Route path="orders" element={<OrdersPage />} />
+
+        {/* old link keeps working */}
+        <Route path="collections" element={<Navigate to="/categories" replace />} />
+      </Route>
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+FILE: src/api.js
+import axios from 'axios';
+
+// Falls back to the Render backend if no .env is present.
+const API_BASE =
+  import.meta.env.VITE_API_BASE || 'https://abbayah-backend.onrender.com/api';
+
+export const TOKEN_KEY = 'abyr_admin_token'; // separate from the storefront's "abyr_token"
+
+const api = axios.create({ baseURL: API_BASE });
+
+// Attach the admin token to every request (same pattern as the storefront).
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+// If the token expires or is rejected, drop it and bounce to login.
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem(TOKEN_KEY);
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(err);
+  }
+);
+
+// Pull a human-readable message out of the backend's error shapes.
+export const apiError = (err) =>
+  err?.response?.data?.message ||
+  err?.response?.data?.error ||
+  err?.response?.data?.errors?.[0]?.msg ||
+  err?.message ||
+  'Something went wrong';
+
+export default api;
+FILE: src/pages/DashboardPage.jsx
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import api, { apiError } from '../api';
+import { IconOrders } from '../components/Icons';
+import { PageHeader } from '../components/Layout';
+import { Badge, EmptyState, Loading } from '../components/ui';
+import { SAR, STATUS_META } from '../theme';
+
+export default function DashboardPage() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    Promise.all([
+      api.get('/products'),
+      api.get('/categories?all=true'),
+      api.get('/offers?all=true'),
+      api.get('/orders/admin/all'),
+    ])
+      .then(([p, c, o, ord]) => {
+        setData({
+          products: p.data.length,
+          categories: c.data.length,
+          offers: o.data.length,
+          orders: ord.data,
+        });
+      })
+      .catch((err) => setError(apiError(err)));
+  }, []);
+
+  if (error) {
+    return (
+      <>
+        <PageHeader title="Dashboard" />
+        <div className="card card__pad"><p className="muted">{error}</p></div>
+      </>
+    );
+  }
+  if (!data) return (<><PageHeader title="Dashboard" /><Loading /></>);
+
+  const open = data.orders.filter((o) => o.status === 'placed').length;
+  const recent = data.orders.slice(0, 6);
+
+  const stats = [
+    { label: 'Products', value: data.products, to: '/products' },
+    { label: 'Categories', value: data.categories, to: '/categories' },
+    { label: 'Offers', value: data.offers, to: '/offers' },
+    { label: 'Orders', value: data.orders.length, foot: open ? `${open} awaiting confirmation` : 'All caught up', to: '/orders' },
+  ];
+
+  return (
+    <>
+      <PageHeader title="Dashboard" subtitle="A quick look at your store today." />
+
+      <div className="grid-cards" style={{ marginBottom: 24 }}>
+        {stats.map((s) => (
+          <Link to={s.to} key={s.label} className="card stat">
+            <div className="stat__label">{s.label}</div>
+            <div className="stat__value">{s.value}</div>
+            {s.foot && <div className="stat__foot">{s.foot}</div>}
+          </Link>
+        ))}
+      </div>
+
+      <div className="card">
+        <div className="card__head">
+          <div>
+            <div className="card__title">Recent orders</div>
+          </div>
+          <Link to="/orders" className="btn btn--subtle btn--sm">View all</Link>
+        </div>
+
+        {recent.length === 0 ? (
+          <EmptyState
+            icon={<IconOrders size={34} />}
+            title="No orders yet"
+            message="When customers check out on the app or web, their orders show up here."
+          />
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((o) => {
+                  const st = STATUS_META[o.status] || STATUS_META.placed;
+                  return (
+                    <tr key={o._id}>
+                      <td className="nowrap" style={{ fontWeight: 500 }}>{o.orderNumber}</td>
+                      <td>{o.user?.name || '—'}<div className="cell-product__meta">{o.user?.email}</div></td>
+                      <td className="nowrap">{SAR(o.total)}</td>
+                      <td><Badge fg={st.fg} bg={st.bg}>{st.label}</Badge></td>
+                      <td className="nowrap muted">{new Date(o.createdAt).toLocaleDateString()}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+FILE: src/pages/OffersPage.jsx
+import { useEffect, useState } from 'react';
+import api, { apiError } from '../api';
+import { IconEdit, IconExternal, IconOffers, IconPlus, IconTrash } from '../components/Icons';
+import ImageField from '../components/ImageField';
+import { PageHeader } from '../components/Layout';
+import { ConfirmDialog, Modal } from '../components/Modal';
+import { Badge, Button, EmptyState, Field, Loading, Toggle } from '../components/ui';
+import { useToast } from '../context/ToastContext';
+
+const blank = () => ({ title: '', badgeText: '', subtitle: '', imageUrl: '', link: '', order: 0, isActive: true });
+
+export default function OffersPage() {
+  const toast = useToast();
+  const [items, setItems] = useState(null);
+  const [error, setError] = useState('');
+  const [editing, setEditing] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+
+  const load = () =>
+    api.get('/offers?all=true')
+      .then((res) => setItems(res.data))
+      .catch((err) => setError(apiError(err)));
+
+  useEffect(() => { load(); }, []);
+
+  const onDelete = async () => {
+    try {
+      await api.delete(`/offers/${confirm._id}`);
+      toast.success('Offer deleted');
+      setConfirm(null);
+      load();
+    } catch (err) { toast.error(apiError(err)); }
+  };
+
+  return (
+    <>
+      <PageHeader
+        title="Offers"
+        subtitle="Promo banners shown across the storefront."
+        actions={<Button icon={<IconPlus size={17} />} onClick={() => setEditing('new')}>Add offer</Button>}
+      />
+
+      {error ? (
+        <div className="card card__pad muted">{error}</div>
+      ) : !items ? (
+        <Loading />
+      ) : items.length === 0 ? (
+        <div className="card">
+          <EmptyState
+            icon={<IconOffers size={34} />}
+            title="No offers yet"
+            message="Create a promo banner — a seasonal sale or a new-arrival highlight — to feature on the home screen."
+            action={<Button icon={<IconPlus size={17} />} onClick={() => setEditing('new')}>Add offer</Button>}
+          />
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+          {items.map((o) => (
+            <div key={o._id} className="card" style={{ overflow: 'hidden' }}>
+              {/* Preview mirrors the storefront: photo on the left fading into
+                  a dark panel on the right. Keeps the admin honest about what
+                  customers actually see. */}
+              <div style={{ display: 'flex', minHeight: 200, background: 'var(--ink, #1A1A1A)' }}>
+                <div style={{ flex: '0 0 170px', position: 'relative', background: 'var(--cream)', overflow: 'hidden' }}>
+                  {o.imageUrl ? (
+                    <img src={o.imageUrl} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top center' }} />
+                  ) : (
+                    <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#c9c0b4', fontSize: 11 }}>
+                      No image
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background:
+                        'linear-gradient(to right, rgba(26,26,26,0) 0%, rgba(26,26,26,0.10) 40%, rgba(26,26,26,0.40) 64%, rgba(26,26,26,0.78) 84%, rgba(26,26,26,1) 100%)',
+                    }}
+                  />
+                </div>
+
+                <div style={{ flex: 1, padding: '18px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', color: '#fff', minWidth: 0 }}>
+                  {o.badgeText ? (
+                    <span style={{ alignSelf: 'flex-start' }}>
+                      <Badge fg="#1A1A1A" bg="var(--gold)">{o.badgeText}</Badge>
+                    </span>
+                  ) : <span />}
+
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontFamily: 'var(--display)', fontStyle: 'italic', fontSize: 24, lineHeight: 1.15 }}>{o.title}</div>
+                    {o.subtitle && <div style={{ fontSize: 12, opacity: .75, marginTop: 6, lineHeight: 1.5 }}>{o.subtitle}</div>}
+                  </div>
+
+                  <div style={{ fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: 'var(--gold)', borderTop: '1px solid rgba(196,168,130,0.28)', paddingTop: 10 }}>
+                    Shop now →
+                  </div>
+                </div>
+
+              </div>
+
+              <div className="card__pad" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <div className="muted" style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  {o.link ? (<><IconExternal size={15} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.link}</span></>) : (<span>No link · order {o.order}</span>)}
+                  {!o.isActive && <Badge fg="#5B5048" bg="#EFEAE2">Hidden</Badge>}
+                </div>
+                <div className="row-actions">
+                  <button className="icon-btn" title="Edit" onClick={() => setEditing(o)}><IconEdit size={17} /></button>
+                  <button className="icon-btn icon-btn--danger" title="Delete" onClick={() => setConfirm(o)}><IconTrash size={17} /></button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editing && (
+        <OfferForm
+          item={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }}
+        />
+      )}
+
+      <ConfirmDialog
+        open={!!confirm}
+        onClose={() => setConfirm(null)}
+        onConfirm={onDelete}
+        title="Delete offer"
+        message={confirm ? `Remove the “${confirm.title}” banner?` : ''}
+      />
+    </>
+  );
+}
+
+function OfferForm({ item, onClose, onSaved }) {
+  const toast = useToast();
+  const isEdit = !!item;
+  const [form, setForm] = useState(() => (item ? { ...blank(), ...item } : blank()));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const onSubmit = async () => {
+    if (!form.title.trim()) { setErr('Title is required'); return; }
+    setSaving(true);
+    const payload = {
+      title: form.title.trim(),
+      badgeText: form.badgeText,
+      subtitle: form.subtitle,
+      imageUrl: form.imageUrl,
+      link: form.link,
+      order: Number(form.order) || 0,
+      isActive: form.isActive,
+    };
+    try {
+      if (isEdit) await api.put(`/offers/${item._id}`, payload);
+      else await api.post('/offers', payload);
+      toast.success(isEdit ? 'Offer updated' : 'Offer added');
+      onSaved();
+    } catch (e) { toast.error(apiError(e)); setSaving(false); }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={isEdit ? 'Edit offer' : 'New offer'}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={onSubmit} loading={saving}>{isEdit ? 'Save changes' : 'Add offer'}</Button>
+        </>
+      }
+    >
+      <div className="form-stack">
+        <Field label="Title" placeholder="Mid-Season Sale" value={form.title} error={err} onChange={(e) => { set('title', e.target.value); setErr(''); }} />
+        <div className="field-row">
+          <Field label="Badge text" placeholder="30% OFF" value={form.badgeText} onChange={(e) => set('badgeText', e.target.value)} />
+          <Field label="Sort order" type="number" value={form.order} onChange={(e) => set('order', e.target.value)} hint="Lower shows first." />
+        </div>
+        <Field label="Subtitle (optional)" placeholder="On selected abayas" value={form.subtitle} onChange={(e) => set('subtitle', e.target.value)} />
+        <ImageField label="Offer photo" aspect="3 / 4" value={form.imageUrl} onChange={(v) => set('imageUrl', v)} />
+        <Field label="Link (optional)" placeholder="/category/sale" value={form.link} onChange={(e) => set('link', e.target.value)} hint="Where the banner takes shoppers when tapped." />
+        <div className="field">
+          <span className="field__label">Visibility</span>
+          <Toggle checked={form.isActive} onChange={(v) => set('isActive', v)} label={form.isActive ? 'Visible to customers' : 'Hidden'} />
+        </div>
+      </div>
+    </Modal>
+  );
+}FILE: src/pages/CategoriesPage.jsx
+import { useEffect, useState } from 'react';
+import api, { apiError } from '../api';
+import { IconCollections, IconEdit, IconImage, IconPlus, IconTrash } from '../components/Icons';
+import ImageField from '../components/ImageField';
+import { PageHeader } from '../components/Layout';
+import { ConfirmDialog, Modal } from '../components/Modal';
+import { Badge, Button, EmptyState, Field, Loading, Toggle } from '../components/ui';
+import { useToast } from '../context/ToastContext';
+
+const blank = () => ({ name: '', imageUrl: '', description: '', order: 0, isActive: true });
+
+// Products store their category as plain text ("Black Abayas"), while a category
+// slug is "black-abayas". This matches them the same way the backend does:
+// case-insensitive, with hyphens/underscores/spaces treated as the same thing.
+const norm = (s = '') => s.toLowerCase().replace(/[-_\s]+/g, ' ').trim();
+
+export default function CategoriesPage() {
+  const toast = useToast();
+  const [items, setItems] = useState(null);
+  const [products, setProducts] = useState([]);
+  const [error, setError] = useState('');
+  const [editing, setEditing] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+
+  const load = () =>
+    Promise.all([api.get('/categories?all=true'), api.get('/products')])
+      .then(([cats, prods]) => {
+        setItems(cats.data);
+        setProducts(prods.data || []);
+      })
+      .catch((err) => setError(apiError(err)));
+
+  useEffect(() => { load(); }, []);
+
+  // How many products actually carry this category name?
+  const countFor = (name) =>
+    products.filter((p) => norm(p.category) === norm(name)).length;
+
+  const onDelete = async () => {
+    try {
+      await api.delete(`/categories/${confirm._id}`);
+      toast.success('Category deleted');
+      setConfirm(null);
+      load();
+    } catch (err) { toast.error(apiError(err)); }
+  };
+
+  return (
+    <>
+      <PageHeader
+        title="Categories"
+        subtitle="The category menu and picture tiles on your storefront."
+        actions={<Button icon={<IconPlus size={17} />} onClick={() => setEditing('new')}>Add category</Button>}
+      />
+
+      {error ? (
+        <div className="card card__pad muted">{error}</div>
+      ) : !items ? (
+        <Loading />
+      ) : items.length === 0 ? (
+        <div className="card">
+          <EmptyState
+            icon={<IconCollections size={34} />}
+            title="No categories yet"
+            message="Add a category — like “Abaya” or “Jalabiya” — to show it in your storefront menu."
+            action={<Button icon={<IconPlus size={17} />} onClick={() => setEditing('new')}>Add category</Button>}
+          />
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}>
+          {items.map((c) => {
+            const count = countFor(c.name);
+            return (
+              <div key={c._id} className="card" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                {/* Preview matches the storefront tile: portrait photo with the
+                    name set into it over a scrim, so crops are judged correctly. */}
+                <div style={{ aspectRatio: '3 / 4', background: 'var(--cream)', position: 'relative', overflow: 'hidden' }}>
+                  {c.imageUrl ? (
+                    <img
+                      src={c.imageUrl}
+                      alt=""
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top center', display: 'block' }}
+                    />
+                  ) : (
+                    <span style={{ position: 'absolute', inset: 0, color: '#c9c0b4', display: 'grid', justifyItems: 'center', alignContent: 'center', gap: 6 }}>
+                      <IconImage size={26} />
+                      <span style={{ fontSize: 11 }}>No image</span>
+                    </span>
+                  )}
+
+                  {c.imageUrl && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        background:
+                          'linear-gradient(to top, rgba(16,10,11,0.88) 0%, rgba(16,10,11,0.50) 20%, rgba(16,10,11,0.15) 40%, rgba(16,10,11,0) 62%)',
+                      }}
+                    />
+                  )}
+
+                  {c.imageUrl && (
+                    <div style={{ position: 'absolute', left: 0, right: 0, bottom: 14, textAlign: 'center', padding: '0 10px' }}>
+                      <div style={{ fontFamily: 'var(--display)', fontSize: 17, color: 'var(--cream)', lineHeight: 1.2 }}>{c.name}</div>
+                      <div style={{ width: 22, height: 1, background: 'var(--gold)', margin: '7px auto 0', opacity: 0.85 }} />
+                    </div>
+                  )}
+
+                  {!c.isActive && (
+                    <span style={{ position: 'absolute', top: 10, left: 10 }}>
+                      <Badge fg="#5B5048" bg="#EFEAE2">Hidden</Badge>
+                    </span>
+                  )}
+                </div>
+
+                <div className="card__pad" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 500 }}>{c.name}</div>
+                    <div className="cell-product__meta">
+                      {count === 0 ? (
+                        <span style={{ color: 'var(--amber)' }}>No products</span>
+                      ) : (
+                        <>{count} product{count === 1 ? '' : 's'}</>
+                      )}
+                      {' · '}order {c.order}
+                    </div>
+                  </div>
+                  <div className="row-actions">
+                    <button className="icon-btn" title="Edit" onClick={() => setEditing(c)}><IconEdit size={17} /></button>
+                    <button className="icon-btn icon-btn--danger" title="Delete" onClick={() => setConfirm(c)}><IconTrash size={17} /></button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {editing && (
+        <CategoryForm
+          item={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }}
+        />
+      )}
+
+      <ConfirmDialog
+        open={!!confirm}
+        onClose={() => setConfirm(null)}
+        onConfirm={onDelete}
+        title="Delete category"
+        message={confirm ? `Remove “${confirm.name}” from your storefront menu? Products keep their category and stay in the store.` : ''}
+      />
+    </>
+  );
+}
+
+function CategoryForm({ item, onClose, onSaved }) {
+  const toast = useToast();
+  const isEdit = !!item;
+  const [form, setForm] = useState(() => (item ? { ...blank(), ...item } : blank()));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const renamed = isEdit && norm(form.name) !== norm(item.name);
+
+  const onSubmit = async () => {
+    if (!form.name.trim()) { setErr('Name is required'); return; }
+    setSaving(true);
+    const payload = {
+      name: form.name.trim(),
+      imageUrl: form.imageUrl,
+      description: form.description,
+      order: Number(form.order) || 0,
+      isActive: form.isActive,
+    };
+    try {
+      if (isEdit) await api.put(`/categories/${item._id}`, payload);
+      else await api.post('/categories', payload);
+      toast.success(isEdit ? 'Category updated' : 'Category added');
+      onSaved();
+    } catch (e) { toast.error(apiError(e)); setSaving(false); }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={isEdit ? 'Edit category' : 'New category'}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={onSubmit} loading={saving}>{isEdit ? 'Save changes' : 'Add category'}</Button>
+        </>
+      }
+    >
+      <div className="form-stack">
+        <Field
+          label="Name"
+          placeholder="Abaya"
+          value={form.name}
+          error={err}
+          onChange={(e) => { set('name', e.target.value); setErr(''); }}
+          hint="The storefront link is generated from the name automatically."
+        />
+
+        {renamed && (
+          <div style={{ background: '#FBE7D8', border: '1px solid #f0d3bd', borderRadius: 9, padding: '10px 13px', fontSize: 12.5, color: '#8A3A00', lineHeight: 1.55 }}>
+            You're renaming this category. Products still have the old name in their
+            Category field, so this one will show no products until you update them
+            on the Products page.
+          </div>
+        )}
+
+        <ImageField label="Tile image" aspect="3 / 4" value={form.imageUrl} onChange={(v) => set('imageUrl', v)} hint="Shown in the “Shop by Category” section on your storefront." />
+        <Field as="textarea" label="Description (optional)" value={form.description} onChange={(e) => set('description', e.target.value)} />
+        <div className="field-row">
+          <Field label="Sort order" type="number" value={form.order} onChange={(e) => set('order', e.target.value)} hint="Lower shows first." />
+          <div className="field">
+            <span className="field__label">Visibility</span>
+            <Toggle checked={form.isActive} onChange={(v) => set('isActive', v)} label={form.isActive ? 'Visible to customers' : 'Hidden'} />
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}FILE: src/pages/ProductsPage.jsx
+import { useEffect, useMemo, useState } from 'react';
+import api, { apiError } from '../api';
+import { useToast } from '../context/ToastContext';
+import { PageHeader } from '../components/Layout';
+import { Modal, ConfirmDialog } from '../components/Modal';
+import { Button, Field, Select, Chips, Badge, Loading, EmptyState } from '../components/ui';
+import ImageField from '../components/ImageField';
+import { IconPlus, IconEdit, IconTrash, IconPercent, IconProducts, IconImage } from '../components/Icons';
+import { TAG_META, TAG_OPTIONS, DEFAULT_SIZES, SAR } from '../theme';
+
+const blank = () => ({
+  name: '', price: '', salePrice: '', category: 'Abaya', description: '',
+  stock: 10, sizes: ['XS', 'S', 'M', 'L', 'XL'], tag: 'none',
+  imageUrl: '', imageUrl2: '', images: [], colors: [],
+});
+
+const num = (v) => (v === '' || v == null ? null : Number(v));
+
+export default function ProductsPage() {
+  const toast = useToast();
+  const [products, setProducts] = useState(null);
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+
+  const [editing, setEditing] = useState(null); // product or 'new'
+  const [confirm, setConfirm] = useState(null); // product to delete
+  const [discount, setDiscount] = useState(null); // product for discount modal
+
+  const load = () =>
+    api.get('/products')
+      .then((res) => setProducts(res.data))
+      .catch((err) => setError(apiError(err)));
+
+  useEffect(() => { load(); }, []);
+
+  const filtered = useMemo(() => {
+    if (!products) return [];
+    const q = query.trim().toLowerCase();
+    if (!q) return products;
+    return products.filter(
+      (p) => p.name?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q)
+    );
+  }, [products, query]);
+
+  const onDelete = async () => {
+    try {
+      await api.delete(`/products/${confirm._id}`);
+      toast.success('Product deleted');
+      setConfirm(null);
+      load();
+    } catch (err) {
+      toast.error(apiError(err));
+    }
+  };
+
+  return (
+    <>
+      <PageHeader
+        title="Products"
+        subtitle="Everything for sale on the app and web."
+        actions={<Button icon={<IconPlus size={17} />} onClick={() => setEditing('new')}>Add product</Button>}
+      />
+
+      <div className="toolbar">
+        <div className="search">
+          <input className="input" placeholder="Search by name or category" value={query} onChange={(e) => setQuery(e.target.value)} />
+        </div>
+        {products && <span className="muted nowrap">{filtered.length} of {products.length}</span>}
+      </div>
+
+      <div className="card">
+        {error ? (
+          <div className="card__pad muted">{error}</div>
+        ) : !products ? (
+          <Loading />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={<IconProducts size={34} />}
+            title={query ? 'No matches' : 'No products yet'}
+            message={query ? 'Try a different search.' : 'Add your first product to show it on the storefront.'}
+            action={!query && <Button icon={<IconPlus size={17} />} onClick={() => setEditing('new')}>Add product</Button>}
+          />
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr><th>Product</th><th>Price</th><th>Stock</th><th>Tag</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
+              </thead>
+              <tbody>
+                {filtered.map((p) => {
+                  const tag = TAG_META[p.tag] || TAG_META.none;
+                  return (
+                    <tr key={p._id}>
+                      <td>
+                        <div className="cell-product">
+                          {p.imageUrl ? (
+                            <img className="thumb" src={p.imageUrl} alt="" />
+                          ) : (
+                            <span className="thumb thumb--placeholder"><IconImage size={18} /></span>
+                          )}
+                          <div>
+                            <div className="cell-product__name">{p.name}</div>
+                            <div className="cell-product__meta">{p.category}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="nowrap">
+                        {p.salePrice != null ? (
+                          <span className="price"><span className="price__sale">{SAR(p.salePrice)}</span><span className="price__old">{SAR(p.price)}</span></span>
+                        ) : (
+                          <span className="price">{SAR(p.price)}</span>
+                        )}
+                      </td>
+                      <td className={p.stock === 0 ? '' : 'muted'} style={p.stock === 0 ? { color: 'var(--red-alert)', fontWeight: 600 } : undefined}>
+                        {p.stock === 0 ? 'Out of stock' : p.stock}
+                      </td>
+                      <td>{p.tag && p.tag !== 'none' ? <Badge fg={tag.fg} bg={tag.bg}>{tag.label}</Badge> : <span className="muted">—</span>}</td>
+                      <td>
+                        <div className="row-actions">
+                          <button className="icon-btn" title="Set discount" onClick={() => setDiscount(p)}><IconPercent size={17} /></button>
+                          <button className="icon-btn" title="Edit" onClick={() => setEditing(p)}><IconEdit size={17} /></button>
+                          <button className="icon-btn icon-btn--danger" title="Delete" onClick={() => setConfirm(p)}><IconTrash size={17} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {editing && (
+        <ProductForm
+          product={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }}
+        />
+      )}
+
+      {discount && (
+        <DiscountModal
+          product={discount}
+          onClose={() => setDiscount(null)}
+          onSaved={() => { setDiscount(null); load(); }}
+        />
+      )}
+
+      <ConfirmDialog
+        open={!!confirm}
+        onClose={() => setConfirm(null)}
+        onConfirm={onDelete}
+        title="Delete product"
+        message={confirm ? `Remove “${confirm.name}” from the store? This can't be undone.` : ''}
+      />
+    </>
+  );
+}
+
+/* ----------------------------- Product form ----------------------------- */
+function ProductForm({ product, onClose, onSaved }) {
+  const toast = useToast();
+  const isEdit = !!product;
+  const [form, setForm] = useState(() => (product ? { ...blank(), ...product, salePrice: product.salePrice ?? '', images: product.images || [], colors: product.colors || [] } : blank()));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState({});
+
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const toggleSize = (s) =>
+    setForm((f) => ({ ...f, sizes: f.sizes.includes(s) ? f.sizes.filter((x) => x !== s) : [...f.sizes, s] }));
+
+  // gallery
+  const setImage = (i, v) => setForm((f) => ({ ...f, images: f.images.map((x, idx) => (idx === i ? v : x)) }));
+  const addImage = () => setForm((f) => ({ ...f, images: [...f.images, ''] }));
+  const removeImage = (i) => setForm((f) => ({ ...f, images: f.images.filter((_, idx) => idx !== i) }));
+
+  // colors
+  const setColor = (i, key, v) => setForm((f) => ({ ...f, colors: f.colors.map((c, idx) => (idx === i ? { ...c, [key]: v } : c)) }));
+  const addColor = () => setForm((f) => ({ ...f, colors: [...f.colors, { name: '', hex: '#000000', imageUrl: '' }] }));
+  const removeColor = (i) => setForm((f) => ({ ...f, colors: f.colors.filter((_, idx) => idx !== i) }));
+
+  const validate = () => {
+    const e = {};
+    if (!form.name.trim()) e.name = 'Name is required';
+    if (form.price === '' || Number(form.price) < 0) e.price = 'Enter a valid price';
+    if (form.salePrice !== '' && Number(form.salePrice) >= Number(form.price)) e.salePrice = 'Sale must be lower than price';
+    setErr(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const onSubmit = async () => {
+    if (!validate()) return;
+    setSaving(true);
+    const payload = {
+      name: form.name.trim(),
+      price: num(form.price),
+      salePrice: form.salePrice === '' ? null : num(form.salePrice),
+      category: form.category.trim() || 'Abaya',
+      description: form.description,
+      stock: num(form.stock) ?? 0,
+      sizes: form.sizes,
+      tag: form.tag,
+      imageUrl: form.imageUrl,
+      imageUrl2: form.imageUrl2,
+      images: form.images.filter((u) => u && u.trim()),
+      colors: form.colors.filter((c) => c.name || c.imageUrl).map((c) => ({ name: c.name, hex: c.hex, imageUrl: c.imageUrl })),
+    };
+    try {
+      if (isEdit) await api.put(`/products/${product._id}`, payload);
+      else await api.post('/products', payload);
+      toast.success(isEdit ? 'Product updated' : 'Product added');
+      onSaved();
+    } catch (e2) {
+      toast.error(apiError(e2));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      wide
+      title={isEdit ? 'Edit product' : 'New product'}
+      subtitle={isEdit ? product.name : 'Add an item to your store'}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={onSubmit} loading={saving}>{isEdit ? 'Save changes' : 'Add product'}</Button>
+        </>
+      }
+    >
+      <div className="form-stack">
+        <Field label="Name" placeholder="Classic Black Abaya" value={form.name} error={err.name} onChange={(e) => set('name', e.target.value)} />
+
+        <div className="field-row">
+          <Field label="Price (SAR)" type="number" min="0" value={form.price} error={err.price} onChange={(e) => set('price', e.target.value)} />
+          <Field label="Sale price (optional)" type="number" min="0" placeholder="Leave empty for none" value={form.salePrice} error={err.salePrice} onChange={(e) => set('salePrice', e.target.value)} />
+        </div>
+
+        <div className="field-row">
+          <Field label="Category" placeholder="Abaya" value={form.category} onChange={(e) => set('category', e.target.value)} />
+          <Field label="Stock" type="number" min="0" value={form.stock} onChange={(e) => set('stock', e.target.value)} />
+        </div>
+
+        <Select label="Tag" value={form.tag} options={TAG_OPTIONS} onChange={(e) => set('tag', e.target.value)} />
+
+        <Field as="textarea" label="Description" placeholder="Fabric, fit, and styling notes…" value={form.description} onChange={(e) => set('description', e.target.value)} />
+
+        <div className="field">
+          <span className="field__label">Sizes</span>
+          <Chips options={DEFAULT_SIZES} value={form.sizes} onToggle={toggleSize} />
+        </div>
+
+        <hr className="divider" />
+        <div className="subhead">Images</div>
+        <div className="field-row">
+          <ImageField label="Main image" value={form.imageUrl} onChange={(v) => set('imageUrl', v)} />
+          <ImageField label="Hover image (web)" value={form.imageUrl2} onChange={(v) => set('imageUrl2', v)} hint="Shown on hover in the web grid." />
+        </div>
+
+        <div className="field">
+          <span className="field__label">Gallery</span>
+          {form.images.length === 0 && <span className="field__hint">Extra photos shown on the product page.</span>}
+          {form.images.map((url, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+              <input className="input" placeholder="https://…" value={url} onChange={(e) => setImage(i, e.target.value)} />
+              <button className="icon-btn icon-btn--danger" onClick={() => removeImage(i)} title="Remove"><IconTrash size={16} /></button>
+            </div>
+          ))}
+          <div style={{ marginTop: 10 }}>
+            <Button variant="subtle" size="sm" icon={<IconPlus size={15} />} onClick={addImage}>Add gallery image</Button>
+          </div>
+        </div>
+
+        <hr className="divider" />
+        <div className="subhead">Colors</div>
+        {form.colors.length === 0 && <span className="field__hint">Optional color variants with their own swatch and image.</span>}
+        {form.colors.map((c, i) => (
+          <div key={i} className="colorrow" style={{ marginTop: 6 }}>
+            <input className="input" placeholder="Color name (e.g. Beige)" value={c.name} onChange={(e) => setColor(i, 'name', e.target.value)} />
+            <div className="color-input">
+              <input type="color" value={c.hex || '#000000'} onChange={(e) => setColor(i, 'hex', e.target.value)} />
+              <span className="muted" style={{ fontSize: 12 }}>{c.hex}</span>
+            </div>
+            <input className="input" placeholder="Image URL" value={c.imageUrl} onChange={(e) => setColor(i, 'imageUrl', e.target.value)} />
+            <button className="icon-btn icon-btn--danger" onClick={() => removeColor(i)} title="Remove"><IconTrash size={16} /></button>
+          </div>
+        ))}
+        <div style={{ marginTop: 10 }}>
+          <Button variant="subtle" size="sm" icon={<IconPlus size={15} />} onClick={addColor}>Add color</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ----------------------------- Discount modal ----------------------------- */
+function DiscountModal({ product, onClose, onSaved }) {
+  const toast = useToast();
+  const [sale, setSale] = useState(product.salePrice ?? '');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const save = async (clear = false) => {
+    const value = clear ? null : (sale === '' ? null : Number(sale));
+    if (!clear && value != null && value >= product.price) {
+      setErr('Sale price must be lower than the original price.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.put(`/products/${product._id}`, { salePrice: value });
+      toast.success(clear || value == null ? 'Discount removed' : 'Discount applied');
+      onSaved();
+    } catch (e) {
+      toast.error(apiError(e));
+      setSaving(false);
+    }
+  };
+
+  const hasSale = product.salePrice != null;
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Discount"
+      subtitle={product.name}
+      footer={
+        <>
+          {hasSale && <Button variant="ghost" onClick={() => save(true)} loading={saving}>Remove discount</Button>}
+          <Button onClick={() => save(false)} loading={saving}>Apply</Button>
+        </>
+      }
+    >
+      <div className="form-stack">
+        <p className="muted" style={{ fontSize: 13.5 }}>
+          Original price: <strong style={{ color: 'var(--ink)' }}>{SAR(product.price)}</strong>
+        </p>
+        <Field
+          label="Sale price (SAR)"
+          type="number"
+          min="0"
+          placeholder="e.g. 199"
+          value={sale}
+          error={err}
+          onChange={(e) => { setSale(e.target.value); setErr(''); }}
+        />
+        <span className="field__hint">This shows as a strikethrough on the original price across the app and web.</span>
+      </div>
+    </Modal>
+  );
+}
+FILE: src/pages/LoginPage.jsx
+import { useState } from 'react';
+import { Navigate, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { Button, Field } from '../components/ui';
+
+export default function LoginPage() {
+  const { user, loading, login } = useAuth();
+  const navigate = useNavigate();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  if (!loading && user) return <Navigate to="/" replace />;
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSubmitting(true);
+    try {
+      await login(email.trim(), password);
+      navigate('/', { replace: true });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="login">
+      <div className="login__card">
+        <div className="login__brand">
+          <div className="login__mark">abyr</div>
+          <div className="login__sub">LINE · ADMIN</div>
+        </div>
+        <h1 className="login__title">Sign in</h1>
+        <p className="login__hint">Owner access to your store content and orders.</p>
+
+        <form className="login__form" onSubmit={onSubmit}>
+          {error && <div className="login__error">{error}</div>}
+          <Field
+            label="Email"
+            type="email"
+            autoComplete="username"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <Field
+            label="Password"
+            type="password"
+            autoComplete="current-password"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <Button type="submit" loading={submitting} style={{ width: '100%', marginTop: 4 }}>
+            Sign in
+          </Button>
+        </form>
+
+        <div className="login__foot">Abyr Line — modest fashion</div>
+      </div>
+    </div>
+  );
+}
+FILE: src/pages/HomeContentPage.jsx
+import { useEffect, useState } from 'react';
+import api, { apiError } from '../api';
+import { useToast } from '../context/ToastContext';
+import { PageHeader } from '../components/Layout';
+import { Button, Field, Toggle, Loading } from '../components/ui';
+import ImageField from '../components/ImageField';
+
+export default function HomeContentPage() {
+  const toast = useToast();
+  const [hero, setHero] = useState(null);
+  const [news, setNews] = useState({ newsText: '', newsActive: true });
+  const [error, setError] = useState('');
+  const [savingHero, setSavingHero] = useState(false);
+  const [savingNews, setSavingNews] = useState(false);
+
+  useEffect(() => {
+    api.get('/settings')
+      .then((res) => {
+        const d = res.data || {};
+        setHero({
+          eyebrow: d.hero?.eyebrow || '',
+          title: d.hero?.title || '',
+          subtitle: d.hero?.subtitle || '',
+          imageUrl: d.hero?.imageUrl || '',
+          ctaText: d.hero?.ctaText || '',
+          ctaLink: d.hero?.ctaLink || '',
+        });
+        setNews({ newsText: d.newsText || '', newsActive: d.newsActive ?? true });
+      })
+      .catch((err) => setError(apiError(err)));
+  }, []);
+
+  const setH = (k, v) => setHero((f) => ({ ...f, [k]: v }));
+
+  const saveHero = async () => {
+    setSavingHero(true);
+    try {
+      await api.put('/settings', { hero });
+      toast.success('Home hero updated');
+    } catch (e) { toast.error(apiError(e)); }
+    setSavingHero(false);
+  };
+
+  const saveNews = async () => {
+    setSavingNews(true);
+    try {
+      await api.put('/settings', { newsText: news.newsText, newsActive: news.newsActive });
+      toast.success('Banner updated');
+    } catch (e) { toast.error(apiError(e)); }
+    setSavingNews(false);
+  };
+
+  if (error) return (<><PageHeader title="Home & Banner" /><div className="card card__pad muted">{error}</div></>);
+  if (!hero) return (<><PageHeader title="Home & Banner" /><Loading /></>);
+
+  return (
+    <>
+      <PageHeader title="Home & Banner" subtitle="The first things customers see when they open your store." />
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 760 }}>
+        {/* Hero */}
+        <div className="card">
+          <div className="card__head">
+            <div>
+              <div className="card__title">Home hero</div>
+              <div className="card__hint">The big banner at the top of the home screen.</div>
+            </div>
+          </div>
+          <div className="card__pad">
+            <div className="form-stack">
+              <Field label="Eyebrow" placeholder="New Season" value={hero.eyebrow} onChange={(e) => setH('eyebrow', e.target.value)} hint="Small line above the title." />
+              <Field label="Title" placeholder="Timeless Modesty" value={hero.title} onChange={(e) => setH('title', e.target.value)} />
+              <Field as="textarea" label="Subtitle" placeholder="Discover our latest abaya collection." value={hero.subtitle} onChange={(e) => setH('subtitle', e.target.value)} />
+              <ImageField label="Background image" aspect="16 / 9" value={hero.imageUrl} onChange={(v) => setH('imageUrl', v)} />
+              <div className="field-row">
+                <Field label="Button text" placeholder="Shop now" value={hero.ctaText} onChange={(e) => setH('ctaText', e.target.value)} />
+                <Field label="Button link" placeholder="/shop" value={hero.ctaLink} onChange={(e) => setH('ctaLink', e.target.value)} />
+              </div>
+              <div><Button onClick={saveHero} loading={savingHero}>Save hero</Button></div>
+            </div>
+          </div>
+        </div>
+
+        {/* News banner */}
+        <div className="card">
+          <div className="card__head">
+            <div>
+              <div className="card__title">News banner</div>
+              <div className="card__hint">The thin strip across the top — usually a delivery or promo message.</div>
+            </div>
+          </div>
+          <div className="card__pad">
+            <div className="form-stack">
+              <Field label="Message" placeholder="Free delivery on orders over SAR 300" value={news.newsText} onChange={(e) => setNews((n) => ({ ...n, newsText: e.target.value }))} />
+              <div className="field">
+                <span className="field__label">Visibility</span>
+                <Toggle checked={news.newsActive} onChange={(v) => setNews((n) => ({ ...n, newsActive: v }))} label={news.newsActive ? 'Showing on storefront' : 'Hidden'} />
+              </div>
+              <div><Button onClick={saveNews} loading={savingNews}>Save banner</Button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+FILE: src/pages/OrdersPage.jsx
+import { useEffect, useMemo, useState } from 'react';
+import api, { apiError } from '../api';
+import { useToast } from '../context/ToastContext';
+import { PageHeader } from '../components/Layout';
+import { Modal } from '../components/Modal';
+import { Badge, Loading, EmptyState } from '../components/ui';
+import { IconOrders, IconEye, IconImage } from '../components/Icons';
+import { STATUS_META, STATUS_OPTIONS, SAR } from '../theme';
+
+export default function OrdersPage() {
+  const toast = useToast();
+  const [orders, setOrders] = useState(null);
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [active, setActive] = useState(null); // order in detail modal
+
+  const load = () =>
+    api.get('/orders/admin/all')
+      .then((res) => setOrders(res.data))
+      .catch((err) => setError(apiError(err)));
+
+  useEffect(() => { load(); }, []);
+
+  const filtered = useMemo(() => {
+    if (!orders) return [];
+    return filter === 'all' ? orders : orders.filter((o) => o.status === filter);
+  }, [orders, filter]);
+
+  const updateStatus = async (order, status) => {
+    try {
+      await api.put(`/orders/${order._id}/status`, { status });
+      setOrders((list) => list.map((o) => (o._id === order._id ? { ...o, status } : o)));
+      setActive((a) => (a && a._id === order._id ? { ...a, status } : a));
+      toast.success(`Marked ${STATUS_META[status].label.toLowerCase()}`);
+    } catch (err) {
+      toast.error(apiError(err));
+    }
+  };
+
+  return (
+    <>
+      <PageHeader title="Orders" subtitle="Track and update customer orders." />
+
+      <div className="toolbar">
+        <div className="select-wrap" style={{ minWidth: 180 }}>
+          <select className="input" value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="all">All statuses</option>
+            {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
+          </select>
+          <span className="select-caret" />
+        </div>
+        {orders && <span className="muted nowrap">{filtered.length} order{filtered.length === 1 ? '' : 's'}</span>}
+      </div>
+
+      <div className="card">
+        {error ? (
+          <div className="card__pad muted">{error}</div>
+        ) : !orders ? (
+          <Loading />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={<IconOrders size={34} />}
+            title={filter === 'all' ? 'No orders yet' : 'No orders with this status'}
+            message={filter === 'all' ? 'Orders placed on the app or web will appear here.' : 'Try a different status filter.'}
+          />
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th>Date</th><th style={{ textAlign: 'right' }}>View</th></tr>
+              </thead>
+              <tbody>
+                {filtered.map((o) => {
+                  const count = o.items?.reduce((n, it) => n + (it.quantity ?? it.qty ?? 1), 0) || 0;
+                  return (
+                    <tr key={o._id}>
+                      <td className="nowrap" style={{ fontWeight: 500 }}>{o.orderNumber}</td>
+                      <td>{o.user?.name || '—'}<div className="cell-product__meta">{o.user?.email}</div></td>
+                      <td className="muted nowrap">{count} item{count === 1 ? '' : 's'}</td>
+                      <td className="nowrap" style={{ fontWeight: 500 }}>{SAR(o.total)}</td>
+                      <td>
+                        <div className="select-wrap" style={{ minWidth: 140 }} onClick={(e) => e.stopPropagation()}>
+                          <select className="input" value={o.status} onChange={(e) => updateStatus(o, e.target.value)} style={{ padding: '7px 30px 7px 10px', fontSize: 12.5 }}>
+                            {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
+                          </select>
+                          <span className="select-caret" />
+                        </div>
+                      </td>
+                      <td className="nowrap muted">{new Date(o.createdAt).toLocaleDateString()}</td>
+                      <td>
+                        <div className="row-actions">
+                          <button className="icon-btn" title="View order" onClick={() => setActive(o)}><IconEye size={18} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {active && (
+        <OrderDetail order={active} onClose={() => setActive(null)} onStatus={(s) => updateStatus(active, s)} />
+      )}
+    </>
+  );
+}
+
+function OrderDetail({ order, onClose, onStatus }) {
+  const st = STATUS_META[order.status] || STATUS_META.placed;
+  const subtotal = order.subtotal ?? order.items?.reduce((sum, it) => sum + (it.price ?? it.product?.price ?? 0) * (it.quantity ?? it.qty ?? 1), 0);
+  const delivery = order.deliveryFee ?? order.shippingFee ?? order.shipping ?? 0;
+  const addr = order.shippingAddress || order.address;
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      wide
+      title={`Order ${order.orderNumber}`}
+      subtitle={new Date(order.createdAt).toLocaleString()}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        <Badge fg={st.fg} bg={st.bg}>{st.label}</Badge>
+        <div className="select-wrap" style={{ minWidth: 180 }}>
+          <select className="input" value={order.status} onChange={(e) => onStatus(e.target.value)}>
+            {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
+          </select>
+          <span className="select-caret" />
+        </div>
+      </div>
+
+      {/* Customer + address */}
+      <div className="subhead">Customer</div>
+      <div style={{ marginBottom: 6 }}>{order.user?.name || '—'}</div>
+      <div className="muted" style={{ fontSize: 13 }}>{order.user?.email}</div>
+      {addr && (
+        <div style={{ marginTop: 12, fontSize: 13.5, color: '#44403b', lineHeight: 1.6 }}>
+          {typeof addr === 'string'
+            ? addr
+            : [addr.name, addr.phone, addr.line1 || addr.address || addr.street, addr.city, addr.region || addr.state, addr.country, addr.postalCode || addr.zip]
+                .filter(Boolean)
+                .map((line, i) => <div key={i}>{line}</div>)}
+        </div>
+      )}
+
+      <hr className="divider" style={{ margin: '20px 0' }} />
+
+      {/* Items */}
+      <div className="subhead">Items</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
+        {order.items?.map((it, i) => {
+          const name = it.name || it.product?.name || 'Item';
+          const img = it.imageUrl || it.product?.imageUrl;
+          const qty = it.quantity ?? it.qty ?? 1;
+          const price = it.price ?? it.product?.price ?? 0;
+          const variant = [it.size, it.color?.name || it.color].filter(Boolean).join(' · ');
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
+              {img ? <img className="thumb" src={img} alt="" /> : <span className="thumb thumb--placeholder"><IconImage size={18} /></span>}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 500 }}>{name}</div>
+                <div className="cell-product__meta">{variant ? `${variant} · ` : ''}Qty {qty}</div>
+              </div>
+              <div className="nowrap" style={{ fontWeight: 500 }}>{SAR(price * qty)}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      <hr className="divider" style={{ margin: '20px 0' }} />
+
+      {/* Totals */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 14, maxWidth: 280, marginLeft: 'auto' }}>
+        <Row label="Subtotal" value={SAR(subtotal)} />
+        <Row label="Delivery" value={delivery ? SAR(delivery) : 'Free'} />
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+          <span>Total</span><span>{SAR(order.total)}</span>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+const Row = ({ label, value }) => (
+  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+    <span className="muted">{label}</span><span>{value}</span>
+  </div>
+);
