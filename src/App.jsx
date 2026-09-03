@@ -6,10 +6,10 @@ import CategoriesPage from './pages/CategoriesPage';
 import DashboardPage from './pages/DashboardPage';
 import HomeContentPage from './pages/HomeContentPage';
 import LoginPage from './pages/LoginPage';
+import NotificationsPage from './pages/NotificationsPage';
 import OffersPage from './pages/OffersPage';
 import OrdersPage from './pages/OrdersPage';
 import ProductsPage from './pages/ProductsPage';
-
 export default function App() {
   return (
     <Routes>
