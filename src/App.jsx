@@ -29,6 +29,7 @@ export default function App() {
         <Route path="offers" element={<OffersPage />} />
         <Route path="home" element={<HomeContentPage />} />
         <Route path="orders" element={<OrdersPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
 
         {/* old link keeps working */}
         <Route path="collections" element={<Navigate to="/categories" replace />} />
