@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import api, { apiError } from '../api';
-import { useToast } from '../context/ToastContext';
+import { IconEye, IconImage, IconOrders } from '../components/Icons';
 import { PageHeader } from '../components/Layout';
 import { Modal } from '../components/Modal';
-import { Badge, Loading, EmptyState } from '../components/ui';
-import { IconOrders, IconEye, IconImage } from '../components/Icons';
-import { STATUS_META, STATUS_OPTIONS, SAR } from '../theme';
+import { Badge, EmptyState, Loading } from '../components/ui';
+import { useToast } from '../context/ToastContext';
+import { SAR, STATUS_META, STATUS_OPTIONS } from '../theme';
 
 export default function OrdersPage() {
   const toast = useToast();
@@ -114,6 +114,18 @@ function OrderDetail({ order, onClose, onStatus }) {
   const delivery = order.deliveryFee ?? order.shippingFee ?? order.shipping ?? 0;
   const addr = order.shippingAddress || order.address;
 
+  // Payment method label & icon
+  const paymentMap = {
+    cod:      { label: 'Cash on Delivery', icon: '💵' },
+    zaad:     { label: 'Zaad', icon: '📱' },
+    edahab:   { label: 'eDahab', icon: '📱' },
+    applepay: { label: 'Apple Pay', icon: '🍎' },
+    googlepay:{ label: 'Google Pay', icon: '🤖' },
+    card:     { label: 'Card', icon: '💳' },
+    paypal:   { label: 'PayPal', icon: '💰' },
+  };
+  const pm = paymentMap[order.paymentMethod] || { label: order.paymentMethod || '—', icon: '❓' };
+
   return (
     <Modal
       open
@@ -145,6 +157,20 @@ function OrderDetail({ order, onClose, onStatus }) {
                 .map((line, i) => <div key={i}>{line}</div>)}
         </div>
       )}
+
+      {/* ✅ Payment Method (NEW) */}
+      <div style={{ marginTop: 16, padding: '12px 14px', background: 'var(--cream)', borderRadius: 8 }}>
+        <div style={{ ...F(9, 500, 'var(--tan)'), letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 4 }}>
+          Payment Method
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...F(13, 400, 'var(--ink)') }}>
+          <span style={{ fontSize: 20 }}>{pm.icon}</span>
+          <span>{pm.label}</span>
+          {order.phoneNumber && (
+            <span style={{ ...F(11, 400, 'var(--muted)') }}>({order.phoneNumber})</span>
+          )}
+        </div>
+      </div>
 
       <hr className="divider" style={{ margin: '20px 0' }} />
 
