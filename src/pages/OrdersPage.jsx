@@ -109,6 +109,9 @@ export default function OrdersPage() {
 }
 
 function OrderDetail({ order, onClose, onStatus }) {
+  // Small inline-style helper: F(fontSize, fontWeight, color)
+  const F = (fontSize, fontWeight, color) => ({ fontSize, fontWeight, color });
+
   const st = STATUS_META[order.status] || STATUS_META.placed;
   const subtotal = order.subtotal ?? order.items?.reduce((sum, it) => sum + (it.price ?? it.product?.price ?? 0) * (it.quantity ?? it.qty ?? 1), 0);
   const delivery = order.deliveryFee ?? order.shippingFee ?? order.shipping ?? 0;
@@ -158,7 +161,7 @@ function OrderDetail({ order, onClose, onStatus }) {
         </div>
       )}
 
-      {/* ✅ Payment Method (NEW) */}
+      {/* Payment Method */}
       <div style={{ marginTop: 16, padding: '12px 14px', background: 'var(--cream)', borderRadius: 8 }}>
         <div style={{ ...F(9, 500, 'var(--tan)'), letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 4 }}>
           Payment Method
