@@ -10,7 +10,9 @@ export default function HomeContentPage() {
   const [hero, setHero] = useState(null);
   const [news, setNews] = useState({ newsText: '', newsActive: true });
   const [promo, setPromo] = useState({ code: '', line1: '', line2: '', subtitle: '', active: true });
+  const [payment, setPayment] = useState({ zaadNumber: '', edahabNumber: '', note: '' });
   const [savingPromo, setSavingPromo] = useState(false);
+  const [savingPayment, setSavingPayment] = useState(false);
   const [error, setError] = useState('');
   const [savingHero, setSavingHero] = useState(false);
   const [savingNews, setSavingNews] = useState(false);
@@ -34,6 +36,11 @@ export default function HomeContentPage() {
           line2: d.promo?.line2 || '',
           subtitle: d.promo?.subtitle || '',
           active: d.promo?.active ?? true,
+        });
+        setPayment({
+          zaadNumber: d.payment?.zaadNumber || '',
+          edahabNumber: d.payment?.edahabNumber || '',
+          note: d.payment?.note || '',
         });
       })
       .catch((err) => setError(apiError(err)));
@@ -66,6 +73,15 @@ export default function HomeContentPage() {
       toast.success('Promo banner updated');
     } catch (e) { toast.error(apiError(e)); }
     setSavingPromo(false);
+  };
+
+  const savePayment = async () => {
+    setSavingPayment(true);
+    try {
+      await api.put('/settings', { payment });
+      toast.success('Payment numbers updated');
+    } catch (e) { toast.error(apiError(e)); }
+    setSavingPayment(false);
   };
 
   if (error) return (<><PageHeader title="Home & Banner" /><div className="card card__pad muted">{error}</div></>);
@@ -140,6 +156,26 @@ export default function HomeContentPage() {
                 <Toggle checked={promo.active} onChange={(v) => setPromo((p) => ({ ...p, active: v }))} label={promo.active ? 'Showing on home' : 'Hidden'} />
               </div>
               <div><Button onClick={savePromo} loading={savingPromo}>Save promo</Button></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Payment numbers (Zaad / eDahab) */}
+        <div className="card">
+          <div className="card__head">
+            <div>
+              <div className="card__title">Payment numbers</div>
+              <div className="card__hint">Shown to customers at checkout when they choose Zaad or eDahab. This is the number they send money to.</div>
+            </div>
+          </div>
+          <div className="card__pad">
+            <div className="form-stack">
+              <div className="field-row">
+                <Field label="Zaad number" placeholder="063 4567890" value={payment.zaadNumber} onChange={(e) => setPayment((p) => ({ ...p, zaadNumber: e.target.value }))} />
+                <Field label="eDahab number" placeholder="065 1234567" value={payment.edahabNumber} onChange={(e) => setPayment((p) => ({ ...p, edahabNumber: e.target.value }))} />
+              </div>
+              <Field as="textarea" label="Instructions note" placeholder="Send the exact total, then enter your transaction reference." value={payment.note} onChange={(e) => setPayment((p) => ({ ...p, note: e.target.value }))} hint="Short message shown under the number at checkout." />
+              <div><Button onClick={savePayment} loading={savingPayment}>Save payment numbers</Button></div>
             </div>
           </div>
         </div>

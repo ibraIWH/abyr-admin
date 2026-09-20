@@ -170,9 +170,14 @@ function OrderDetail({ order, onClose, onStatus }) {
           <span style={{ fontSize: 20 }}>{pm.icon}</span>
           <span>{pm.label}</span>
           {order.phoneNumber && (
-            <span style={{ ...F(11, 400, 'var(--muted)') }}>({order.phoneNumber})</span>
+            <span style={{ ...F(11, 400, 'var(--muted)') }}>from {order.phoneNumber}</span>
           )}
         </div>
+        {order.paymentRef && (
+          <div style={{ marginTop: 6, ...F(12.5, 600, 'var(--ink)') }}>
+            Ref:&nbsp;<span style={{ fontFamily: 'ui-monospace, monospace', letterSpacing: 0.5 }}>{order.paymentRef}</span>
+          </div>
+        )}
       </div>
 
       <hr className="divider" style={{ margin: '20px 0' }} />
