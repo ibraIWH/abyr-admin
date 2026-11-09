@@ -165,6 +165,10 @@ function ProductForm({ product, onClose, onSaved }) {
   const [form, setForm] = useState(() => (product ? { ...blank(), ...product, salePrice: product.salePrice ?? '', images: product.images || [], colors: product.colors || [] } : blank()));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState({});
+  // AI description helper
+  const [aiLang, setAiLang] = useState('en');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [prevDesc, setPrevDesc] = useState(null); // text before the AI wrote, for Undo
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -180,6 +184,38 @@ function ProductForm({ product, onClose, onSaved }) {
   const setColor = (i, key, v) => setForm((f) => ({ ...f, colors: f.colors.map((c, idx) => (idx === i ? { ...c, [key]: v } : c)) }));
   const addColor = () => setForm((f) => ({ ...f, colors: [...f.colors, { name: '', hex: '#000000', imageUrl: '' }] }));
   const removeColor = (i) => setForm((f) => ({ ...f, colors: f.colors.filter((_, idx) => idx !== i) }));
+
+  // Ask the backend (Gemini) for a description. Whatever is already in
+  // Description is sent as notes, so the AI only uses facts you gave it.
+  const writeWithAI = async () => {
+    if (!form.name.trim()) {
+      setErr((e) => ({ ...e, name: 'Add the name first, then ask the AI' }));
+      return;
+    }
+    setAiBusy(true);
+    try {
+      const { data } = await api.post('/ai/product-description', {
+        name: form.name,
+        category: form.category,
+        colors: form.colors.map((c) => c.name).filter(Boolean),
+        sizes: form.sizes,
+        notes: form.description,
+        language: aiLang,
+      });
+      setPrevDesc(form.description);
+      set('description', data.description);
+      toast.success('Description written. Read it before you save.');
+    } catch (e2) {
+      toast.error(apiError(e2));
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const undoAI = () => {
+    set('description', prevDesc ?? '');
+    setPrevDesc(null);
+  };
 
   const validate = () => {
     const e = {};
@@ -247,7 +283,19 @@ function ProductForm({ product, onClose, onSaved }) {
 
         <Select label="Tag" value={form.tag} options={TAG_OPTIONS} onChange={(e) => set('tag', e.target.value)} />
 
-        <Field as="textarea" label="Description" placeholder="Fabric, fit, and styling notes…" value={form.description} onChange={(e) => set('description', e.target.value)} />
+        <Field as="textarea" dir="auto" label="Description" placeholder="Fabric, fit, and styling notes…" value={form.description} onChange={(e) => { setPrevDesc(null); set('description', e.target.value); }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: -4 }}>
+          <div className="select-wrap" style={{ width: 132 }}>
+            <select className="input" value={aiLang} onChange={(e) => setAiLang(e.target.value)} aria-label="Description language">
+              <option value="en">English</option>
+              <option value="ar">العربية</option>
+            </select>
+            <span className="select-caret" />
+          </div>
+          <Button variant="subtle" size="sm" loading={aiBusy} onClick={writeWithAI}>✨ Write with AI</Button>
+          {prevDesc !== null && <Button variant="ghost" size="sm" onClick={undoAI}>Undo</Button>}
+          <span className="field__hint">Uses the name, category, colours, sizes and any notes already in Description. Read it before saving.</span>
+        </div>
 
         <div className="field">
           <span className="field__label">Sizes</span>
